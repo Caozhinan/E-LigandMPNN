@@ -1,0 +1,103 @@
+# 需要注意，每个里面的warm_start是用于导入预训练过的，但是要是任务不同的话，是不是不应该导入这个模型，而是想办法获取其权重。
+# 情况分类（忽略固定特殊层的要求，只考虑该任务常规的冻结层）：全参数训练模式、特定任务的调参训练模式 这种情况应该是model的yaml里加参数，等加载网络权重之后再做统一决定；
+# 然后是导入模型这块：有warm_start类型，这个应该是权限最高的，会导入全部模型权重；然后也应该有从其他任务生成的ckpt导入权重的情况，这个的难点是导入哪些模块。
+pretrain_sequence:
+  warm_start: null #/xcfhome/ypxia/Workspace/BioMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-12-26/pretrain_sequence/2025-12-26_15-05-45/last.ckpt
+  warm_start_cfg_override: False # If use the config in warm_start model
+  model_ckpt: /xcfhome/ypxia/Workspace/BioMPNN/pretrain_model/ligandmpnn_v_32_010_25.ckpt #/xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-15/train_pdb/2025-04-15_04-51-15/epoch=997-step=7677008.ckpt #0.1A
+  finetune: False
+  finetune_last_module: False
+  train_last_module: False   #----------------------------------
+  ligand_mpnn_use_side_chain_context: 0  #----------------------------
+  sc_packing: False  #----------------------------------
+  sc_CB: False #like no function, now is use diffusion to control CB is known in test, but in train, it is unknown. So it should need more try for when using CB atom in training.
+  affinity_prediction: False
+  backbone_score: False
+  sequence_evaluate: False
+  RL_backbone: False
+  RL_sequence: False
+
+pretrain_sc_packing:
+  warm_start: null #/xcfhome/ypxia/Workspace/BioMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-12-09/pretrain_sc_packing/2025-12-09_09-27-36/last.ckpt
+  warm_start_cfg_override: False
+  mpnn_start: null
+  model_ckpt: /xcfhome/ypxia/Workspace/BioMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-12-30/pretrain_sequence/2025-12-30_15-32-40/epoch=0-step=4284.ckpt # v4, 0.1A noise
+  # /xcfhome/ypxia/Workspace/LigandMPNN/model_params/ligandmpnn_v_32_010_25.pt
+  # /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-16/train_pdb/2025-04-16_16-16-03/epoch=1917-step=15100730.ckpt # v2, 0.3A noise
+  # /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-16/train_pdb/2025-04-16_19-59-20/epoch=1984-step=10589951.ckpt # v2, 0.2A noise
+  # /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-15/train_pdb/2025-04-15_04-51-15/epoch=997-step=7677008.ckpt # v2, 0.1A noise
+  # /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-06-24/finetune_diffusion_backboneCB_new/2025-06-24_12-36-13/epoch=351-step=1022841.ckpt  #pretrained model for mpnn part，这是原来sc_packing的，不过问题是用的是原始的mpnn model，不是我训练的，不太适合统一，需要重新训。
+  finetune: False #when this is true, model should load params from mpnn_start.
+  finetune_last_module: False
+  train_last_module: False   #----------------------------------
+  ligand_mpnn_use_side_chain_context: 0  #----------------------------
+  sc_packing: True  #----------------------------------
+  sc_CB: False
+  affinity_prediction: False
+  backbone_score: False
+  sequence_evaluate: False
+  RL_backbone: False
+  RL_sequence: False
+
+finetune_backbone_score:
+  warm_start: /xcfhome/ypxia/Workspace/BioMPNN/ckpt/ligandmpnn/ligandmpnn_backbone_score_2025-12-10/pretrain_sc_packing/2025-12-10_01-07-37/epoch=94-step=42940.ckpt
+  warm_start_cfg_override: False
+  model_ckpt: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-16/train_pdb/2025-04-16_16-16-03/epoch=1917-step=15100730.ckpt #0.3A
+  finetune: False #When this is true, model should load params from mpnn_start. And this should be .ckpt format is better.
+  finetune_last_module: False
+  train_last_module: False   #----------------------------------
+  ligand_mpnn_use_side_chain_context: 0  #----------------------------
+  sc_packing: False  #----------------------------------
+  sc_CB: False
+  affinity_prediction: False
+  backbone_score: True
+  sequence_evaluate: False
+  RL_backbone: False
+  RL_sequence: False
+
+finetune_sequence_evaluate:
+  warm_start: null
+  warm_start_cfg_override: False
+  model_ckpt: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-06-24/finetune_diffusion_backboneCB_new/2025-06-24_12-36-13/epoch=351-step=1022841.ckpt
+  finetune: False
+  finetune_last_module: False
+  train_last_module: False   #----------------------------------
+  ligand_mpnn_use_side_chain_context: 0  #----------------------------
+  sc_packing: True  #----------------------------------
+  sc_CB: False
+  affinity_prediction: False
+  backbone_score: False
+  sequence_evaluate: True
+  RL_sequence: False
+  RL_backbone: False
+
+RL_sequence:
+  warm_start: null
+  warm_start_cfg_override: False
+  model_ckpt: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-06-24/finetune_diffusion_backboneCB_new/2025-06-24_12-36-13/epoch=351-step=1022841.ckpt
+  finetune: False
+  finetune_last_module: False
+  train_last_module: False   #----------------------------------
+  ligand_mpnn_use_side_chain_context: 0  #----------------------------
+  sc_packing: True  #----------------------------------
+  sc_CB: False
+  affinity_prediction: False
+  backbone_score: False
+  sequence_evaluate: False
+  RL_sequence: True
+  RL_backbone: False
+
+RL_backbone:
+  warm_start: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-06-24/finetune_diffusion_backboneCB_new/2025-06-24_12-36-13/epoch=351-step=1022841.ckpt
+  warm_start_cfg_override: True
+  finetune: False
+  finetune_last_module: False
+  train_last_module: False   #----------------------------------
+  ligand_mpnn_use_side_chain_context: 0  #----------------------------
+  sc_packing: True  #----------------------------------
+  sc_CB: False
+  affinity_prediction: False
+  backbone_score: False
+  sequence_evaluate: False
+  RL_sequence: False
+  RL_backbone: True

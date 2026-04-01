@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pt
+*.pth
+*.safetensors
+ckpt/
+outputs/
+*.log
+outputs/
+*.log
+outputs/
+ckpt/

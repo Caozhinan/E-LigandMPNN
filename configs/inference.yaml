@@ -1,0 +1,177 @@
+# Configuration for inference on SE(3) diffusion experiments.
+defaults:
+  - base
+  - _self_
+
+inference:
+
+  # predict_dir: ./inference_outputs/
+  # inference_subdir: run_${now:%Y-%m-%d}_${now:%H-%M-%S}
+
+  # Use this to write with date-time stamp.
+  #name: run_${now:%Y-%m-%d}_${now:%H-%M}
+  seed: 123
+  task: ligandmpnn
+  # output_dir: inference_outputs/
+
+  # Choose checkpoint path
+  #performance: origin: 
+  # 005: 0.527,0.654,4.499;  010: 0.516, 0.613, 4.685; 020: 0.483, 0.580, 5.181; 030: 0.464, 0.554, 5.596 
+  # puclic weights: 0.501, 0.621, 4.912
+  #ckpt_path: None #origin, 0.527, 0.654, 4.499
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-01-09/2025-01-09_23-57-22/epoch=13-step=61460.ckpt
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-01-12/2025-01-12_10-44-19/last.ckpt #epoch=4-step=21950.ckpt  #finetune and test best # 0.585, 0.747, 3.797
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-01-10/2025-01-10_07-26-30/epoch=273-step=1202860.ckpt  #from scratch and test best   # 0.576,0.738, 4.501
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-01-12/2025-01-12_10-44-19/epoch=2-step=13170.ckpt #finetune and valid best #0.579, 0.742, 3.864
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-01-12/2025-01-12_11-24-48/epoch=244-step=1075550.ckpt #from scratch and valid best #0.573,0.717, 4.599
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-01-16/finetune_with_pdbbind_only/2025-01-16_09-36-31/epoch=1-step=2544.ckpt #finetune with pdbbind  #0.565, 0.725, 4.025
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-01-16/train_with_pdbbind_only/2025-01-16_09-31-41/last.ckpt  #train with pdbbind only #0.396, 0.588, 9.315
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-02-11/train_merge/2025-02-11_22-22-53/epoch=296-step=1274427.ckpt  #train merge datav2 #0.583, 0.732, 4.501
+
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-02-17/train_extend_pdbbind/2025-02-17_14-13-05/last.ckpt #epoch=120-step=131527.ckpt # 0.366, 0.511, 14.081
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-02-17/train_origin_pdbbind/2025-02-17_12-51-25/epoch=68-step=68034.ckpt #0.368, 0.476, 7.876
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-02-17/train_origin_pdbbind_no_repeat/2025-02-17_13-31-16/epoch=249-step=233750.ckpt #0.346, 0.458, 10.317
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-02-18/train_extend_pdbbind_limit/2025-02-18_01-54-04/epoch=150-step=108267.ckpt # 0.35, 0.481, 9.645
+  
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-02-18/train_merge/2025-02-18_01-58-35/last.ckpt #epoch=158-step=529152.ckpt #last.ckpt # 0.564, 0.702, 4.783
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-02-18/train_merge_limit/2025-02-18_06-47-17/last.ckpt # 0.553, 0.708, 5.162
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-02-18/train_merge_super/2025-02-18_03-04-06/last.ckpt #epoch=11-step=127692.ckpt # 0.490, 0.662, 5.556
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-02-19/train_merge_super/2025-02-19_09-52-03/last.ckpt #epoch=369-step=246050.ckpt # 0.571, 0.715, 4.684
+
+  #Add 0.2A noise
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-02-26/train_merge_super/2025-02-26_09-58-44/last.ckpt #epoch=67-step=68340.ckpt
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-02-26/train_merge_valid/2025-02-26_10-45-53/last.ckpt
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_merge_2025-02-27/train_merge_valid/2025-02-27_08-24-24/last.ckpt
+
+
+  #
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-03-28/train_pdb/2025-03-28_18-19-55/last.ckpt    # 0.02A noise + pdb data
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-03-30/train_pdb/2025-03-30_19-38-37/epoch=1301-step=3473811.ckpt #train 0.02A noise with pdb and dropout010
+  
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-03-31/train_pdb/2025-03-31_15-40-53/epoch=1960-step=4313060.ckpt   # train 0.2A noise with pdb third round
+
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-01/train_pdb/2025-04-01_13-33-08/epoch=975-step=4582404.ckpt  # 0.1A noise with pdb
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-02/train_pdb/2025-04-02_23-34-05/epoch=78-step=1359171.ckpt #train last network with 0.1A noise
+
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-03/train_pdb/2025-04-03_12-54-49/epoch=15-step=115253.ckpt #train pdb with dropout equal 0.3
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-03/train_pdb/2025-04-03_20-14-39/epoch=7-step=115312.ckpt #train pdb with len 2000
+
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-06/train_pdb/2025-04-06_13-13-40/epoch=390-step=1894554.ckpt #train origin data with 0.1A noise
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-06/train_pdb/2025-04-06_18-05-56/epoch=384-step=1702520.ckpt # train more origin pdb data with 0.1 A and more ckpt, 恢复率到52.5了
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-07/train_pdb/2025-04-07_00-27-25/epoch=1-step=11960.ckpt #finetune all with origin pdb
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-07/train_pdb/2025-04-07_10-32-15/ #train all origin pdb length 6000
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-08/train_pdb/2025-04-08_10-37-01/  #发现原来的数据效果好，转头基于纯粹的原始数据进行训练，len限制在2000，为了快速训练。500 epochs, f130
+
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-03-30/train_pdb/2025-03-30_16-11-32/epoch=67-step=648481.ckpt # finetune last network,55.6, 67.5, 4.185
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-03-30/train_pdb/2025-03-30_16-12-05/epoch=11-step=114449.ckpt # finetune all network, 54.3, 68.7, 4.408
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-03-30/train_pdb/2025-03-30_23-33-52/epoch=68-step=159369.ckpt  #finetune last with bindingnet, 55.4, 67.4, 4.183
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-03-28/train_pdb/2025-03-28_00-11-20/epoch=562-step=506231.ckpt       #0.2A noise + pdb
+  #origin_public: 55.6, 67.1, 4.125; 010: 57.1, 69.5, 3.945; 030: 51.8, 64.4, 4.706
+
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ty_ckpt/epoch=2-step=14546.ckpt #tianyi train, 49.1, 60.3, 5.061, 0.1 noise; finetune: 57.7, 70.4, 3.876
+  
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-09/train_pdb/2025-04-09_10-00-15/epoch=499-step=1343159.ckpt  #新方式训练,origin data,15w, f152, cyan
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-12/train_pdb/2025-04-12_08-46-03/epoch=1393-step=4455954.ckpt  #2k epoch, f150, 51.2, 66.5, 4.809
+
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-09/train_pdb/2025-04-09_10-27-08/epoch=448-step=3453960.ckpt  #新方式训练,origin augment data,18w,data V2, 0.1 noise f130, yellow, 50.5, 63.6, 4.86
+  #49.4, 51.5, 5.042； train: 60.5, 65.3, 3.621
+  
+  #这个是0.1的noise。
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-15/train_pdb/2025-04-15_04-51-15/epoch=997-step=7677008.ckpt  #130 second round, V2, noise 0.1, 52, 65.6, 4.713
+  
+  #这一组应该都是0.3
+  #ckpt_path:  /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-09/train_pdb/2025-04-09_15-05-04/epoch=484-step=2822119.ckpt #data V2, 0.3 noise, f151, grey
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-12/train_pdb/2025-04-12_09-22-12/epoch=1195-step=6959221.ckpt  #f147, 1200 epoch, 46.8, 60.8, 5.576
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-16/train_pdb/2025-04-16_16-16-03/epoch=1917-step=15100730.ckpt #f147, 2000 epoch 3 gpus
+
+  #这三个都是0.2，因为当时以0.2为基准，训练的时间最长。
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-10/train_pdb/2025-04-10_02-07-35/epoch=474-step=1971499.ckpt #data V2, 0.2 noise, f150, blue
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-12/train_pdb/2025-04-12_09-18-00/epoch=1102-step=5625606.ckpt # f148, epoch 1200, 49.4, 64.0, 5.157
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-04-16/train_pdb/2025-04-16_19-59-20/epoch=1984-step=10589951.ckpt #f148, 6 gpus
+
+
+  #------------------------------------diffusion module---------------------------------
+  #ckpt_path: /xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-06-24/finetune_diffusion_backboneCB_new/2025-06-24_12-36-13/epoch=351-step=1022841.ckpt
+  #/xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-06-20/finetune_diffusion/2025-06-20_17-15-00/epoch=344-step=1113356.ckpt
+  #/xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-06-19/finetune_diffusion/2025-06-19_14-22-09/epoch=202-step=728121.ckpt
+  #/xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-06-18/finetune_diffusion/2025-06-18_07-45-56/last.ckpt
+  #/xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-06-14/train_diffusion_small_noise/2025-06-14_22-11-51/epoch=344-step=935958.ckpt
+  #/xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-06-14/train_diffusion_small_noise/2025-06-14_22-11-51/epoch=225-step=613121.ckpt #2.0399
+  #/xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-06-12/train_diffusion/2025-06-12_14-34-26/epoch=166-step=453057.ckpt
+  #/xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-06-12/train_diffusion_small_noise/2025-06-12_14-36-58/last.ckpt
+  #/xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-06-12/train_diffusion/2025-06-12_14-34-26/last.ckpt
+  #/xcfhome/ypxia/Workspace/LigandMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-05-16/train_diffusion/2025-05-16_15-06-01/epoch=195-step=709131.ckpt
+
+
+ #----------------------------------------backbone_score---------------------------------
+  ckpt_path: /xcfhome/ypxia/Workspace/BioMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-12-27/pretrain_sequence/2025-12-27_20-27-27/last.ckpt
+  #/xcfhome/ypxia/Workspace/BioMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-12-27/pretrain_sequence/2025-12-27_15-17-34/last.ckpt #/xcfhome/ypxia/Workspace/BioMPNN/ckpt/ligandmpnn/ligandmpnn_pdb_2025-12-26/pretrain_sequence/2025-12-26_11-45-24/last.ckpt
+
+  use_gpu: True
+  num_gpus: 1
+
+  # interpolant:
+  #   min_t: 1e-2
+  #   rots:
+  #     corrupt: True
+  #     sample_schedule: exp
+  #     exp_rate: 10
+  #   trans:
+  #     corrupt: True
+  #     sample_schedule: linear
+  #   sampling:
+  #     num_timesteps: 100
+  #   self_condition: True
+
+  #   twisting:
+  #     use: False
+  #     t_min: 0.2
+  #     scale: 1.
+  #     # scale_w_t: ot
+  #     r_t: 1
+  #     potential_trans: True
+  #     potential_rot: True
+  #     update_trans: True
+  #     update_rot: True
+  #     max_rot_grad_norm: 1000
+  #     align: True
+  #     motif_loc: False
+  #     max_offsets: 1000
+  #     # num_rots: 100
+  #     num_rots: 1
+  #     # scale_rots: math.inf
+  #     scale_rots: 0.
+  #     # scale_rots: 0.1
+  #     obs_noise: 0.
+
+  # samples:
+
+  #   # Number of backbone samples per sequence length.
+  #   samples_per_length: 10
+
+  #   # Minimum sequence length to sample.
+  #   min_length: 60
+
+  #   # Maximum sequence length to sample.
+  #   max_length: 128
+
+  #   # gap between lengths to sample. i.e. this script will sample all lengths
+  #   # in range(min_length, max_length, length_step)
+  #   length_step: 1
+
+  #   # Subset of lengths to sample. If null, sample all targets.
+  #   length_subset: null
+
+  #   overwrite: False
+
+  #   # CSV path for scaffolding targets.
+  #   csv_path: motif_scaffolding/benchmark.csv
+
+  #   # Number of scaffolds to sample per target.
+  #   samples_per_target: 100
+
+  #   # Batch size when sampling from the model
+  #   num_batch: 1
+
+  #   # Subset of targets to scaffold.
+  #   target_subset: null  # e.g. ['5TPN']

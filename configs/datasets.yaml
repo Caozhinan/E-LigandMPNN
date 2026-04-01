@@ -1,0 +1,174 @@
+shared:
+  seed: 123
+  max_cache_size: 100_000
+  samples_per_eval_length: 5
+  num_eval_lengths : 8
+  max_eval_length: 512
+  noise : 0.1   #----------------------------------
+
+  # Scaffolding parameters
+  min_motif_percent: 0.05
+  max_motif_percent: 0.5
+
+
+scope_dataset:
+  seed: ${shared.seed}
+  noise: ${shared.noise}
+  csv_path: ./metadata/scope_metadata.csv
+  max_cache_size: ${shared.max_cache_size}
+  cache_num_res: 0
+  add_plddt_mask: False
+  max_eval_length: ${shared.max_eval_length}
+  inpainting_percent: 1.0
+
+  # Eval parameters
+  samples_per_eval_length: ${shared.samples_per_eval_length}
+  num_eval_lengths: ${shared.num_eval_lengths}
+
+  # Filtering
+  filter:
+    max_num_res: 512 #128
+    min_num_res: 60
+
+  # Scaffolding
+  min_motif_percent: ${shared.min_motif_percent}
+  max_motif_percent: ${shared.max_motif_percent}
+
+
+pdb_dataset:
+  seed: ${shared.seed}
+  noise: ${shared.noise}
+  train_csv_path: /xcfhome/ypxia/data/LigandMPNN/new_data/train_assemble_info_with_cluster_V2.csv    #----------------------------------
+  #train_pdb_BindingNet  #new_data/train_assemble_info_with_cluster
+  valid_csv_path: /xcfhome/ypxia/data/LigandMPNN/new_data/valid_assemble_info_with_cluster_V2.csv #valid_assemble_info_V2_subset500.csv #/xcfhome/ypxia/data/LigandMPNN/new_data/valid_assemble_info_with_cluster_V2.csv
+  test_csv_path: /xcfhome/ypxia/data/LigandMPNN/new_data/train_and_valid_assemble_info_with_cluster_V2.csv
+  cluster_path: /xcfhome/ypxia/data/LigandMPNN/new_data/train_V4.cluster  #这个好像用不到，文件也不存在
+  max_cache_size: ${shared.max_cache_size}
+  cache_num_res: 0
+  inpainting_percent: 1.0
+  diffusion: False
+  backbone_CB: False
+
+  add_plddt_mask: False
+  max_eval_length: ${shared.max_eval_length}
+
+  # Eval parameters
+  samples_per_eval_length: ${shared.samples_per_eval_length}
+  num_eval_lengths: 20 #${shared.num_eval_lengths}
+
+  # Filtering
+  filter:
+    max_num_res: 4000   #----------------------------------
+    min_num_res: 5
+    # max_coil_percent: 0.5
+    # rog_quantile: 0.96
+    # oligomeric: ['monomeric']
+    # num_chains: [1]
+    max_mol_length: 100000
+
+  # Scaffolding
+  # min_motif_percent: ${shared.min_motif_percent} 
+  # max_motif_percent: ${shared.max_motif_percent}
+  
+pdbbind_dataset:
+  seed: ${shared.seed}
+  noise: ${shared.noise}
+  train_csv_path: /xcfhome/ypxia/data/LigandMPNN/train_df_v2.csv
+  valid_csv_path: /xcfhome/ypxia/data/LigandMPNN/valid_df_v2.csv
+  test_csv_path: /xcfhome/ypxia/data/LigandMPNN/test_df_v2.csv
+  #cluster_path: ./metadata/pdbbind.clusters
+  max_cache_size: ${shared.max_cache_size}
+  cache_num_res: 0
+
+  #add_plddt_mask: False
+  #max_eval_length: ${shared.max_eval_length}
+
+  samples_per_eval_length: ${shared.samples_per_eval_length}
+  num_eval_lengths: 20
+
+  filter:
+    max_num_res: 512
+    min_num_res: 60
+    max_coil_percent: 0.5
+    rog_quantile: 0.96
+    #oligomeric: ['monomeric']
+    num_chains: [1]
+    max_mol_length: 60
+
+bindingnet_dataset:
+  seed: ${shared.seed}
+  noise: ${shared.noise}
+  train_csv_path: /xcfhome/ypxia/data/BindingNet/binding_train_v2.csv
+  valid_csv_path: /xcfhome/ypxia/data/BindingNet/binding_valid_v2.csv
+  test_csv_path: /xcfhome/ypxia/data/BindingNet/binding_test_v2.csv
+  #cluster_path: ./metadata/pdbbind.clusters
+  max_cache_size: ${shared.max_cache_size}
+  cache_num_res: 0
+
+  add_plddt_mask: False
+  max_eval_length: ${shared.max_eval_length}
+
+  samples_per_eval_length: ${shared.samples_per_eval_length}
+  num_eval_lengths: 20
+
+  filter:
+    max_num_res: 512
+    min_num_res: 60
+    max_coil_percent: 0.5
+    rog_quantile: 0.96
+    #oligomeric: ['monomeric']
+    num_chains: [1]
+    max_mol_length: 60
+
+merge_dataset:
+  seed: ${shared.seed}
+  noise: ${shared.noise}
+  train_csv_path: /xcfhome/ypxia/data/LigandMPNN/train_valid_merge_df.csv
+  valid_csv_path: /xcfhome/ypxia/data/LigandMPNN/test_df_v2.csv
+  test_csv_path: /xcfhome/ypxia/data/LigandMPNN/test_df_v2.csv
+  #test_csv_path: /xcfhome/ypxia/data/LigandMPNN/new_test/test_ultra_small.csv
+  #cluster_path: ./metadata/pdbbind.clusters
+  max_cache_size: ${shared.max_cache_size}
+  cache_num_res: 0
+
+  add_plddt_mask: False
+  max_eval_length: ${shared.max_eval_length}
+
+  samples_per_eval_length: ${shared.samples_per_eval_length}
+  num_eval_lengths: 20
+
+  filter:
+    max_num_res: 1024
+    min_num_res: 10
+    max_coil_percent: 0.6
+    rog_quantile: 0.96
+    #oligomeric: ['monomeric']
+    num_chains: [1]
+    max_mol_length: 60
+
+backbone_score_dataset:
+  seed: ${shared.seed}
+  noise: 0
+  train_csv_path: /xcfhome/ypxia/data/LigandMPNN/backbone_score/RFD_backbone_train.csv
+  valid_csv_path: /xcfhome/ypxia/data/LigandMPNN/backbone_score/RFD_backbone_valid.csv
+  test_csv_path: /xcfhome/ypxia/data/LigandMPNN/backbone_score/RFD_backbone_test.csv
+  #test_csv_path: /xcfhome/ypxia/data/LigandMPNN/new_test/test_ultra_small.csv
+  #cluster_path: ./metadata/pdbbind.clusters
+  max_cache_size: ${shared.max_cache_size}
+  cache_num_res: 0
+  diffusion: False
+  backbone_CB: False
+  
+  add_plddt_mask: False
+  max_eval_length: ${shared.max_eval_length}
+
+  samples_per_eval_length: ${shared.samples_per_eval_length}
+  num_eval_lengths: 20
+
+  filter:
+    max_num_res: 1024
+    min_num_res: 10
+    max_coil_percent: 0.6
+    rog_quantile: 0.96
+    num_chains: [1]
+    max_mol_length: 60

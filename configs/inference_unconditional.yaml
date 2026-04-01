@@ -1,0 +1,15 @@
+# Unconditional sampling
+defaults:
+  - _inference
+  - _self_
+
+inference:
+  task: unconditional
+  #ckpt_path: weights/scope/published.ckpt
+  #ckpt_path: /xcfhome/ypxia/github/protein-frame-flow/ckpt/se3-fm/hallucination_scope/2024-10-30_09-42-05/last.ckpt
+  ckpt_path: /xcfhome/ypxia/github/protein-frame-flow/ckpt/ty/last.ckpt
+  #ckpt_path: /xcfhome/ypxia/github/protein-frame-flow/ckpt/se3-fm/hallucination_pdb_2024-11-03/2024-11-03_12-05-49/last.ckpt
+  #ckpt_path: /xcfhome/ypxia/github/protein-frame-flow/ckpt/train_scope_epoch_1000/last.ckpt
+  samples:
+    length_subset: [70, 100, 200, 300]
+    samples_per_length: 100

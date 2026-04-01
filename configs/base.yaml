@@ -1,0 +1,76 @@
+defaults:
+  - _self_
+  - datasets
+  - model
+
+data:
+  task: ligandmpnn # proteinmpnn or ligandmpnn
+  # Available tasks: pdb, scope, pdbbind, bindingnet
+  dataset: pdb #merge  #pdb #backbone_score ----------------------------------
+  train_name: train_pdb  # finetune_with_pdbbind_only
+
+  loader:
+    num_workers: 10
+    prefetch_factor: 10
+
+  sampler:
+    # Setting for 48GB GPUs
+    #max_batch_size: 80
+    #max_num_res_squared: 400_000
+    examples_in_cluster: 2 #2   #----------------------------------
+    max_batch_size: 20 #20
+    max_num_res_squared: 450000 #450000
+
+experiment:
+  debug: False
+  seed: 123
+  num_devices: 8
+
+  dropout: 0.1  #----------------------------------
+  ligand_mpnn_use_side_chain_context: 0  #----------------------------
+
+  task: pretrain # 1.pretrain (sequence、new_Encoder、sc_packing) 2.finetune (backbone、侧链=>affinity-引导强化学习/筛选、backbone+sequence=>调整序列) 3.RL（refine backbone, ppo in sequence generation)
+  pretrain: sequence #{sequence(train from scratch)、encoder、sc_packing、finetune_last_module}
+  finetune: backbone_score #{affinity、backbone_score、sequence_evaluate} #When in inference process, it is too complex to consider so many tasks together. 骨架重新设计的时候如何考虑评价指标，公平的跟原骨架比较？其实骨架效果好就行。
+  RL: sequence #{backbone (backbone_score RL)、sequence (affinity RL)}
+  #if do filter,can add a new choice. in RL state, should add a filter.
+
+  affinity_prediction: False
+  training:
+    mask_plddt: True
+    bb_atom_scale: 0.1
+    trans_scale: 0.1
+    translation_loss_weight: 2.0
+    t_normalize_clip: 0.9
+    rotation_loss_weights: 1.0
+    aux_loss_weight: 0.5
+    aux_loss_use_bb_loss: True
+    aux_loss_use_pair_loss: True
+    aux_loss_t_pass: 0.5
+  wandb:
+    name: ${data.task}_${data.dataset}_${now:%Y-%m-%d}
+    project: ligandmpnn
+  optimizer:
+    betas: [0.9, 0.98]
+    eps: 1e-9
+    weight_decay: 0.01
+    lr: 1e-5 # 0.0001   ----------------------------------
+  trainer:
+    overfit_batches: 0
+    min_epochs: 1 # prevents early stopping
+    max_epochs: 1500  #origin 1000 change to 300  ----------------------------------
+    accelerator: gpu
+    log_every_n_steps: 1
+    deterministic: False
+    #strategy: ddp
+    strategy: ddp_find_unused_parameters_true
+    check_val_every_n_epoch: 1
+    accumulate_grad_batches: 2
+  checkpointer:
+    dirpath: ckpt/${experiment.wandb.project}/${experiment.wandb.name}/${data.train_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
+    save_last: True
+    save_top_k: 3   #----------------------------------
+    monitor: valid/epoch_accuracy #valid_loss #epoch_accuracy #这个也受任务限制，注意了。
+    mode: max #max
+  # Keep this null. Will be populated at runtime.
+  inference_dir: null
