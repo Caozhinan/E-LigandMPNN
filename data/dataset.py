@@ -317,7 +317,7 @@ class PDBDataset(BaseDataset):
     def process_csv_row(self, csv_row):
         data = load_protein_ligand_list_from_file_list( [csv_row.blob_path ] )[0]
 
-        if csv_row.source == "pdb":
+        if csv_row.source in ("pdb", "bindingnetv2"):
             if self._is_training:
                 feature_dict = parse_PDB_from_PDB_complex( data, chains=ast.literal_eval(csv_row.chain_idx), noise = self.noise, diffusion = self.diffusion, backbone_CB = self.backbone_CB, is_training = self._is_training )
             else:
