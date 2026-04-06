@@ -57,7 +57,7 @@ class mpnnModule(LightningModule):
                 #augment_eps=self._exp_cfg.noise_level,
                 dropout=self._exp_cfg.dropout,
                 device=None,
-                atom_context_num=25,
+                atom_context_num=30,
                 model_type="ligand_mpnn",
                 ligand_mpnn_use_side_chain_context=self._exp_cfg.ligand_mpnn_use_side_chain_context,
                 side_chain_diffusion = self.model_cfg.sc_packing, #self._exp_cfg.sc_packing,
