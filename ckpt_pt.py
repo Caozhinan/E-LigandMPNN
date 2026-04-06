@@ -20,7 +20,7 @@ def convert_ckpt_to_pt(ckpt_path, output_path):
         new_model = {
             'num_edges': model_weight['num_edges'],
             'noise_level': model_weight['noise_level'],
-            'atom_context_num': model_weight['atom_context_num']
+            'atom_context_num': 30  # 更新为新值
         }
 
         # 处理state_dict键名（从ckpt提取并去除前缀）

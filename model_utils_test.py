@@ -81,15 +81,27 @@ class ProteinMPNN(torch.nn.Module):
             self.V_C_norm = torch.nn.LayerNorm(hidden_dim)
 
             self.context_encoder_layers = torch.nn.ModuleList(
-                [
-                    DecLayer(hidden_dim, hidden_dim * 2, dropout=dropout)
-                    for _ in range(2)
-                ]
+                [DecLayerWithAttn(hidden_dim, hidden_dim * 2, dropout=dropout) for _ in range(4)]
             )
 
             self.y_context_encoder_layers = torch.nn.ModuleList(
-                [ DecLayerJ(hidden_dim, hidden_dim, dropout=dropout) for _ in range(2) ]
+                [DecLayerJ(hidden_dim, hidden_dim, dropout=dropout) for _ in range(4)]
             )
+
+            # 增强 E：动态 h_E_context 更新层
+            self.dynamic_context_proj = torch.nn.ModuleList(
+                [torch.nn.Linear(hidden_dim * 2, hidden_dim, bias=True) for _ in range(4)]
+            )
+
+            # 增强 A：蛋白→配体门控注入层
+            self.protein_to_ligand_proj = torch.nn.ModuleList(
+                [torch.nn.Linear(hidden_dim, hidden_dim, bias=True) for _ in range(4)]
+            )
+            self.protein_to_ligand_gate = torch.nn.ModuleList(
+                [torch.nn.Linear(hidden_dim * 2, hidden_dim, bias=True) for _ in range(4)]
+            )
+            for gate_layer in self.protein_to_ligand_gate:
+                torch.nn.init.constant_(gate_layer.bias, -2.0)
 
             if self.side_chain_diffusion:
                 #手动创建 TrainingNoiseSampler 的配置字典
@@ -255,10 +267,27 @@ class ProteinMPNN(torch.nn.Module):
             Y_nodes = self.W_nodes_y(Y_nodes)
             Y_edges = self.W_edges_y(Y_edges)
             for i in range(len(self.context_encoder_layers)):
+                # 增强 A：蛋白→配体门控注入
+                protein_signal = self.protein_to_ligand_proj[i](h_V_C)  # [B, L, 128]
+                protein_signal = protein_signal[:, :, None, :].expand_as(Y_nodes)  # [B, L, M, 128]
+                gate = torch.sigmoid(self.protein_to_ligand_gate[i](
+                    torch.cat([Y_nodes, protein_signal], -1)
+                ))  # [B, L, M, 128]
+                Y_nodes = Y_nodes + gate * protein_signal
+
+                # 原有：配体内部消息传递
                 Y_nodes = self.y_context_encoder_layers[i](
                     Y_nodes, Y_edges, Y_m, Y_m_edges
                 )
-                h_E_context_cat = torch.cat([h_E_context, Y_nodes], -1)
+
+                # 增强 E：动态更新 h_E_context
+                h_V_C_expand = h_V_C[:, :, None, :].expand_as(h_E_context)  # [B, L, M, 128]
+                h_E_context_dynamic = self.dynamic_context_proj[i](
+                    torch.cat([h_E_context, h_V_C_expand], -1)  # [B, L, M, 256] → [B, L, M, 128]
+                )
+
+                # 原有（使用动态 context）：配体→蛋白消息传递（现在用 DecLayerWithAttn）
+                h_E_context_cat = torch.cat([h_E_context_dynamic, Y_nodes], -1)
                 h_V_C = self.context_encoder_layers[i](
                     h_V_C, h_E_context_cat, mask, Y_m
                 )
@@ -1965,6 +1994,45 @@ class PositionWiseFeedForward(torch.nn.Module):
         h = self.act(self.W_in(h_V))
         h = self.W_out(h)
         return h
+
+
+class DecLayerWithAttn(torch.nn.Module):
+    def __init__(self, num_hidden, num_in, dropout=0.1, num_heads=None, scale=30):
+        super().__init__()
+        self.num_hidden = num_hidden
+        self.num_in = num_in
+        self.dropout1 = torch.nn.Dropout(dropout)
+        self.dropout2 = torch.nn.Dropout(dropout)
+        self.norm1 = torch.nn.LayerNorm(num_hidden)
+        self.norm2 = torch.nn.LayerNorm(num_hidden)
+        self.W1 = torch.nn.Linear(num_hidden + num_in, num_hidden, bias=True)
+        self.W2 = torch.nn.Linear(num_hidden, num_hidden, bias=True)
+        self.W3 = torch.nn.Linear(num_hidden, num_hidden, bias=True)
+        self.act = torch.nn.GELU()
+        self.dense = PositionWiseFeedForward(num_hidden, num_hidden * 4)
+        # 注意力权重层
+        self.W_attn = torch.nn.Linear(num_hidden, 1, bias=True)
+        torch.nn.init.zeros_(self.W_attn.bias)
+        torch.nn.init.normal_(self.W_attn.weight, std=0.01)
+
+    def forward(self, h_V, h_E, mask_V=None, mask_attend=None):
+        h_V_expand = h_V.unsqueeze(-2).expand(-1, -1, h_E.size(-2), -1)
+        h_EV = torch.cat([h_V_expand, h_E], -1)
+        h_message = self.W3(self.act(self.W2(self.act(self.W1(h_EV)))))
+        if mask_attend is not None:
+            h_message = mask_attend.unsqueeze(-1) * h_message
+        # 注意力聚合替代 sum/scale
+        attn_logits = self.W_attn(h_message).squeeze(-1)  # [B, L, M]
+        if mask_attend is not None:
+            attn_logits = attn_logits.masked_fill(mask_attend == 0, -1e9)
+        attn_weights = torch.nn.functional.softmax(attn_logits, dim=-1)  # [B, L, M]
+        dh = torch.sum(attn_weights.unsqueeze(-1) * h_message, dim=-2)  # [B, L, hidden]
+        h_V = self.norm1(h_V + self.dropout1(dh))
+        dh = self.dense(h_V)
+        h_V = self.norm2(h_V + self.dropout2(dh))
+        if mask_V is not None:
+            h_V = mask_V.unsqueeze(-1) * h_V
+        return h_V
 
 
 class PositionalEncodings(torch.nn.Module):
