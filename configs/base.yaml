@@ -17,7 +17,8 @@ data:
     # Setting for 48GB GPUs
     #max_batch_size: 80
     #max_num_res_squared: 400_000
-    examples_in_cluster: 2 #2   #----------------------------------
+    examples_in_cluster: 5
+    examples_in_cluster_bnetv2: 10
     max_batch_size: 20 #20
     max_num_res_squared: 450000 #450000
 

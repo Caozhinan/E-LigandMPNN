@@ -276,15 +276,32 @@ class LengthBatcher:
             self._data_csv = self._data_csv.sample(frac=1, random_state=self.seed + self.epoch)
 
             pdb_data = self._data_csv[self._data_csv['source'] == 'pdb']
-            non_pdb_data = self._data_csv[self._data_csv['source'] != 'pdb']
+            bnetv2_data = self._data_csv[self._data_csv['source'] == 'bindingnetv2']
+            other_data = self._data_csv[~self._data_csv['source'].isin(['pdb', 'bindingnetv2'])]
 
-            # 仅对 source 为 pdb 的数据进行按 cluster_id 采样
+            samples = []
+
+            # PDB source: cluster sampling with examples_in_cluster
             if not pdb_data.empty and "cluster_id" in pdb_data.columns:
-                cluster_sample = pdb_data.groupby('cluster_id', group_keys=False).head(self._sampler_cfg.examples_in_cluster)
+                cluster_sample = pdb_data.groupby('cluster_id', group_keys=False).head(
+                    self._sampler_cfg.examples_in_cluster
+                )
+                samples.append(cluster_sample)
 
-            # 合并所有符合条件的索引
-            final_sample = pd.concat([cluster_sample, non_pdb_data], ignore_index=True)
+            # BindingNetv2 source: cluster sampling with examples_in_cluster_bnetv2
+            if not bnetv2_data.empty and "cluster_id" in bnetv2_data.columns:
+                bnetv2_n = getattr(self._sampler_cfg, 'examples_in_cluster_bnetv2',
+                                   self._sampler_cfg.examples_in_cluster)
+                cluster_sample_bnetv2 = bnetv2_data.groupby('cluster_id', group_keys=False).head(
+                    bnetv2_n
+                )
+                samples.append(cluster_sample_bnetv2)
 
+            # Other sources: no cluster sampling, include all
+            if not other_data.empty:
+                samples.append(other_data)
+
+            final_sample = pd.concat(samples, ignore_index=True)
             return final_sample['index'].tolist()
         else:
             return self._data_csv['index'].tolist()
