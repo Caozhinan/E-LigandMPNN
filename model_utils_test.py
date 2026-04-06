@@ -225,6 +225,13 @@ class ProteinMPNN(torch.nn.Module):
         for p in self.parameters():
             if p.dim() > 1:
                 torch.nn.init.xavier_uniform_(p)
+
+        # 重新初始化 DecLayerWithAttn 的 W_attn，防止被上面的 xavier_uniform_ 覆盖
+        if self.model_type == "ligand_mpnn":
+            for layer in self.context_encoder_layers:
+                torch.nn.init.zeros_(layer.W_attn.bias)
+                torch.nn.init.normal_(layer.W_attn.weight, std=0.01)
+
         if self.backbone_score:
             self.residue_plddt_head = ResiduePlddtHead(hidden_dim=hidden_dim)
 
