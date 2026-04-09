@@ -944,9 +944,63 @@ class Motif: #这个类要不要，再考虑一下
 from rdkit import Chem
 
 class Molecule:
-    def __init__(self, atom_list=None, atom_coordinate=None, if_origin=False):
+    def __init__(self, atom_list=None, atom_coordinate=None, atom_features=None, if_origin=False):
         self.atom_list = atom_list or []  # 原子列表
         self.atom_coordinate = atom_coordinate if atom_coordinate is not None else []  # 原子坐标
+        self.atom_features = atom_features  # np.ndarray shape [num_atoms, 12] or None
+
+    @staticmethod
+    def _compute_atom_features(mol):
+        """从 RDKit mol 对象计算每个原子的 12 维化学特征"""
+        HYBRIDIZATION_MAP = {
+            Chem.rdchem.HybridizationType.SP: 0,
+            Chem.rdchem.HybridizationType.SP2: 1,
+            Chem.rdchem.HybridizationType.SP3: 2,
+            Chem.rdchem.HybridizationType.SP3D: 3,
+            Chem.rdchem.HybridizationType.SP3D2: 4,
+        }
+
+        features = []
+        for atom in mol.GetAtoms():
+            try:
+                feat = np.zeros(12, dtype=np.float32)
+
+                # 杂化状态 one-hot (6 维, index 0-5)
+                hyb_idx = HYBRIDIZATION_MAP.get(atom.GetHybridization(), 5)
+                feat[hyb_idx] = 1.0
+
+                # 形式电荷 (1 维, index 6), 归一化到 [-1, 1]
+                feat[6] = np.clip(atom.GetFormalCharge() / 2.0, -1.0, 1.0)
+
+                # 芳香性 (1 维, index 7)
+                feat[7] = float(atom.GetIsAromatic())
+
+                # 环内原子 (1 维, index 8)
+                feat[8] = float(atom.IsInRing())
+
+                # H-bond donor (1 维, index 9)
+                # N-H, O-H, S-H 均为供体
+                atomic_num = atom.GetAtomicNum()
+                feat[9] = float(atomic_num in (7, 8, 16) and atom.GetTotalNumHs() > 0)
+
+                # H-bond acceptor (1 维, index 10)
+                # 基于孤对电子判断
+                if atomic_num == 7:  # N
+                    feat[10] = float((atom.GetTotalValence() - atom.GetFormalCharge()) < 4)
+                elif atomic_num in (8, 9):  # O, F
+                    feat[10] = 1.0
+                elif atomic_num == 16:  # S
+                    feat[10] = float((atom.GetTotalValence() - atom.GetFormalCharge()) < 6)
+
+                # 连接度 (1 维, index 11), 归一化
+                feat[11] = atom.GetDegree() / 5.0
+
+            except Exception:
+                feat = np.zeros(12, dtype=np.float32)
+
+            features.append(feat)
+
+        return np.array(features, dtype=np.float32) if features else np.zeros((0, 12), dtype=np.float32)
 
     @classmethod
     def from_sdf(cls, sdf_path, keep_hydrogens=False):
@@ -976,8 +1030,9 @@ class Molecule:
         # 提取原子符号和坐标信息
         atom_list = [atom.GetSymbol() for atom in mol.GetAtoms()]  # 提取原子符号
         atom_coordinate = mol.GetConformer().GetPositions()  # 提取3D坐标
+        atom_features = cls._compute_atom_features(mol)  # 计算化学特征
         
-        return cls(atom_list=atom_list, atom_coordinate=atom_coordinate)
+        return cls(atom_list=atom_list, atom_coordinate=atom_coordinate, atom_features=atom_features)
 
     @classmethod
     def from_mol2(cls, mol2_path, keep_hydrogens=False):
@@ -1002,8 +1057,9 @@ class Molecule:
         # 提取原子符号和坐标信息
         atom_list = [atom.GetSymbol() for atom in mol.GetAtoms()]  # 提取原子符号
         atom_coordinate = mol.GetConformer().GetPositions()  # 提取3D坐标
+        atom_features = cls._compute_atom_features(mol)  # 计算化学特征
         
-        return cls(atom_list=atom_list, atom_coordinate=atom_coordinate)
+        return cls(atom_list=atom_list, atom_coordinate=atom_coordinate, atom_features=atom_features)
 
     
     def get_Atom(self):
@@ -1088,7 +1144,8 @@ class ProteinLigandComplex:
             "protein": [chain.state_dict() for chain in self.protein],
             "ligand": {
                 "atom_list": self.molecule.atom_list,
-                "atom_coordinate": self.molecule.atom_coordinate.tolist() if self.molecule.atom_coordinate is not None else []
+                "atom_coordinate": self.molecule.atom_coordinate.tolist() if self.molecule.atom_coordinate is not None else [],
+                "atom_features": self.molecule.atom_features.tolist() if self.molecule.atom_features is not None else None
             }
         }
 
@@ -1108,9 +1165,13 @@ class ProteinLigandComplex:
         protein = [
             ProteinChain.from_state_dict(chain_data) for chain_data in data["protein"]
             ]
+        atom_features_raw = data["ligand"].get("atom_features", None)
+        atom_features = np.array(atom_features_raw, dtype=np.float32) if atom_features_raw is not None else None
+
         molecule = Molecule(
             atom_list=data["ligand"]["atom_list"],
-            atom_coordinate=np.array(data["ligand"]["atom_coordinate"])
+            atom_coordinate=np.array(data["ligand"]["atom_coordinate"]),
+            atom_features=atom_features
         )
         return cls(protein=protein, molecule=molecule)
 
@@ -1265,8 +1326,8 @@ class ProteinLigandComplex:
         ligand_coordinates = np.array([[atom.x, atom.y, atom.z] for atom in ligand_atoms])
         ligand_atom_list = [atom.atom_type for atom in ligand_atoms]
 
-        # 创建小分子对象
-        ligand = Molecule(atom_list=ligand_atom_list, atom_coordinate=ligand_coordinates)
+        # 创建小分子对象 (BindingNet 路径没有 RDKit mol 对象，atom_features 设为 None)
+        ligand = Molecule(atom_list=ligand_atom_list, atom_coordinate=ligand_coordinates, atom_features=None)
 
         return cls(protein=protein_chains, molecule=ligand)
 
