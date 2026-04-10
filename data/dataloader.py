@@ -26,6 +26,7 @@ def ligandmpnn_collate_fn(batch):
     xyz_37 = []
     xyz_37_m = []
     randn = []
+    Y_chem = []
 
     xyz_37_valid = []
     atom_to_token_idx = []
@@ -52,6 +53,8 @@ def ligandmpnn_collate_fn(batch):
         xyz_37.append(data['xyz_37'].clone().detach().to(dtype=torch.float32))
         xyz_37_m.append(data['xyz_37_m'].clone().detach().to(dtype=torch.float32))
         randn.append(data['randn'].clone().detach().to(dtype=torch.float32))
+        if 'Y_chem' in data:
+            Y_chem.append(data['Y_chem'].clone().detach().to(dtype=torch.float32))
         if all(k in data for k in required_keys):
             xyz_37_valid.append(data['xyz_37_valid'].clone().detach().to(dtype=torch.float32))
             atom_to_token_idx.append(data['atom_to_token_idx'].clone().detach().to(dtype=torch.int64))
@@ -75,6 +78,8 @@ def ligandmpnn_collate_fn(batch):
     xyz_37 = pad_sequence(xyz_37, batch_first=True, padding_value=0)
     xyz_37_m = pad_sequence(xyz_37_m, batch_first=True, padding_value=0)
     randn = pad_sequence(randn, batch_first=True, padding_value=0)
+    if Y_chem:
+        Y_chem = pad_sequence(Y_chem, batch_first=True, padding_value=0)
 
     if all(k in data.keys() for k in required_keys):
         xyz_37_valid = pad_sequence(xyz_37_valid, batch_first=True, padding_value=0)
@@ -100,6 +105,9 @@ def ligandmpnn_collate_fn(batch):
         'xyz_37_m': xyz_37_m,
         'randn': randn,
     }
+
+    if Y_chem is not None and len(Y_chem) > 0 and isinstance(Y_chem, torch.Tensor):
+        result['Y_chem'] = Y_chem
 
     # 检查这五个是否都存在
     if all(v is not None for v in [xyz_37_valid, atom_to_token_idx, atom37_index, backbone_mask, atom_valid]): #这个是给sc_packing模块使用的，以为batch_size为1，所以不需要padding。

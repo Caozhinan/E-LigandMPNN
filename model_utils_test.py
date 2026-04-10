@@ -1088,13 +1088,13 @@ class ProteinFeaturesLigand(torch.nn.Module):
         self.norm_edges = torch.nn.LayerNorm(edge_features)
 
         self.node_project_down = torch.nn.Linear(
-            5 * num_rbf + 64 + 4, node_features, bias=True
+            5 * num_rbf + 72 + 4, node_features, bias=True
         )
         self.norm_nodes = torch.nn.LayerNorm(node_features)
 
-        self.type_linear = torch.nn.Linear(147, 64)
+        self.type_linear = torch.nn.Linear(159, 72)
 
-        self.y_nodes = torch.nn.Linear(147, node_features, bias=False)
+        self.y_nodes = torch.nn.Linear(159, node_features, bias=False)
         self.y_edges = torch.nn.Linear(num_rbf, node_features, bias=False)
 
         self.norm_y_edges = torch.nn.LayerNorm(node_features)
@@ -1544,6 +1544,7 @@ class ProteinFeaturesLigand(torch.nn.Module):
         mask = input_features["mask"]
         R_idx = input_features["R_idx"]
         chain_labels = input_features["chain_labels"]
+        Y_chem = input_features.get("Y_chem", None)  # [B, L, M, 12] or None
 
         if self.augment_eps > 0:
             X = X + self.augment_eps * torch.randn_like(X)
@@ -1629,6 +1630,11 @@ class ProteinFeaturesLigand(torch.nn.Module):
             R_m = R_m.view(B, L, -1)  # mask
             R_t = R_t.view(B, L, -1)  # atom types
 
+            # 为侧链原子创建零化学特征
+            if Y_chem is not None:
+                R_chem = torch.zeros(B, L, R.shape[2], 12, device=Y_chem.device, dtype=Y_chem.dtype)
+                Y_chem = torch.cat((R_chem, Y_chem), 2)  # [B, L, R_atoms+Y_atoms, 12]
+
             # Ligand atom context
             Y = torch.cat((R, Y), 2)  # [B, L, atoms, 3]
             Y_m = torch.cat((R_m, Y_m), 2)  # [B, L, atoms]
@@ -1644,6 +1650,8 @@ class ProteinFeaturesLigand(torch.nn.Module):
             Y = torch.gather(Y, 2, E_idx_Y[:, :, :, None].repeat(1, 1, 1, 3))
             Y_t = torch.gather(Y_t, 2, E_idx_Y)
             Y_m = torch.gather(Y_m, 2, E_idx_Y)
+            if Y_chem is not None:
+                Y_chem = torch.gather(Y_chem, 2, E_idx_Y[:, :, :, None].repeat(1, 1, 1, 12))
 
         Y_t = Y_t.long()
         #print(self.periodic_table_features.device)
@@ -1659,6 +1667,15 @@ class ProteinFeaturesLigand(torch.nn.Module):
         Y_t_1hot_ = torch.cat(
             [Y_t_1hot_, Y_t_g_1hot_, Y_t_p_1hot_], -1
         )  # [B, L, M, 147]
+
+        # 拼接化学特征
+        if Y_chem is not None:
+            Y_t_1hot_ = torch.cat([Y_t_1hot_, Y_chem.to(Y_t_1hot_.dtype)], -1)  # [B, L, M, 159]
+        else:
+            # 回退：补零到 159 维
+            padding = torch.zeros(*Y_t_1hot_.shape[:-1], 12, device=Y_t_1hot_.device, dtype=Y_t_1hot_.dtype)
+            Y_t_1hot_ = torch.cat([Y_t_1hot_, padding], -1)  # [B, L, M, 159]
+
         Y_t_1hot = self.type_linear(Y_t_1hot_.float())
 
         D_N_Y = self._rbf(

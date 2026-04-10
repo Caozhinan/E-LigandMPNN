@@ -952,55 +952,80 @@ class Molecule:
     @staticmethod
     def _compute_atom_features(mol):
         """从 RDKit mol 对象计算每个原子的 12 维化学特征"""
-        HYBRIDIZATION_MAP = {
+        features = []
+        for atom in mol.GetAtoms():
+            try:
+                feat = Molecule._get_single_atom_features(atom, mol)
+            except Exception:
+                feat = np.zeros(12, dtype=np.float32)
+            features.append(feat)
+        return np.array(features, dtype=np.float32) if features else np.zeros((0, 12), dtype=np.float32)
+
+    @staticmethod
+    def _get_single_atom_features(atom, mol):
+        """从 RDKit Atom 对象提取 12 维化学特征"""
+        # --- 杂化状态 one-hot (6 维) ---
+        hybridization_map = {
             Chem.rdchem.HybridizationType.SP: 0,
             Chem.rdchem.HybridizationType.SP2: 1,
             Chem.rdchem.HybridizationType.SP3: 2,
             Chem.rdchem.HybridizationType.SP3D: 3,
             Chem.rdchem.HybridizationType.SP3D2: 4,
         }
+        hyb = hybridization_map.get(atom.GetHybridization(), 5)  # 5 = other/unknown
+        hyb_onehot = np.zeros(6, dtype=np.float32)
+        hyb_onehot[hyb] = 1.0
 
-        features = []
-        for atom in mol.GetAtoms():
-            try:
-                feat = np.zeros(12, dtype=np.float32)
+        # --- 形式电荷 (1 维, 归一化到 [-1, 1]) ---
+        formal_charge = np.clip(atom.GetFormalCharge() / 2.0, -1.0, 1.0)
 
-                # 杂化状态 one-hot (6 维, index 0-5)
-                hyb_idx = HYBRIDIZATION_MAP.get(atom.GetHybridization(), 5)
-                feat[hyb_idx] = 1.0
+        # --- 芳香性 (1 维) ---
+        is_aromatic = float(atom.GetIsAromatic())
 
-                # 形式电荷 (1 维, index 6), 归一化到 [-1, 1]
-                feat[6] = np.clip(atom.GetFormalCharge() / 2.0, -1.0, 1.0)
+        # --- 环内原子 (1 维) ---
+        is_in_ring = float(atom.IsInRing())
 
-                # 芳香性 (1 维, index 7)
-                feat[7] = float(atom.GetIsAromatic())
+        # --- H-bond donor (1 维) ---
+        # 1. N-H, O-H, S-H 是经典 donor
+        # 2. 带正电荷的 N（如铵离子 NH4+, 胍基）也是 donor
+        symbol = atom.GetSymbol()
+        num_hs = atom.GetTotalNumHs()
+        is_hbd = 0.0
+        if symbol in ('N', 'O', 'S') and num_hs > 0:
+            is_hbd = 1.0
+        elif symbol == 'N' and atom.GetFormalCharge() > 0:
+            is_hbd = 1.0  # 带正电的 N 即使没有显式 H 也可能是 donor
 
-                # 环内原子 (1 维, index 8)
-                feat[8] = float(atom.IsInRing())
+        # --- H-bond acceptor (1 维) ---
+        # 基于孤对电子和形式电荷判断
+        is_hba = 0.0
+        if atom.GetFormalCharge() <= 0:
+            if symbol == 'O':
+                is_hba = 1.0  # 几乎所有 O 都是 acceptor
+            elif symbol == 'N':
+                # N 做 acceptor 的条件：有孤对电子
+                degree = atom.GetDegree()
+                hyb_type = atom.GetHybridization()
+                if hyb_type == Chem.rdchem.HybridizationType.SP3 and degree < 4:
+                    is_hba = 1.0
+                elif hyb_type == Chem.rdchem.HybridizationType.SP2 and degree < 3:
+                    is_hba = 1.0
+                elif hyb_type == Chem.rdchem.HybridizationType.SP and degree < 2:
+                    is_hba = 1.0  # 腈基 N
+            elif symbol == 'S':
+                if atom.GetDegree() <= 2 and not atom.GetIsAromatic():
+                    is_hba = 0.5  # 弱 acceptor，用 0.5 区分
+            elif symbol == 'F':
+                is_hba = 0.3  # 非常弱的 acceptor
 
-                # H-bond donor (1 维, index 9)
-                # N-H, O-H, S-H 均为供体
-                atomic_num = atom.GetAtomicNum()
-                feat[9] = float(atomic_num in (7, 8, 16) and atom.GetTotalNumHs() > 0)
+        # --- 连接度 (1 维, /5.0 归一化) ---
+        degree = atom.GetDegree() / 5.0
 
-                # H-bond acceptor (1 维, index 10)
-                # 基于孤对电子判断
-                if atomic_num == 7:  # N
-                    feat[10] = float((atom.GetTotalValence() - atom.GetFormalCharge()) < 4)
-                elif atomic_num in (8, 9):  # O, F
-                    feat[10] = 1.0
-                elif atomic_num == 16:  # S
-                    feat[10] = float((atom.GetTotalValence() - atom.GetFormalCharge()) < 6)
-
-                # 连接度 (1 维, index 11), 归一化
-                feat[11] = atom.GetDegree() / 5.0
-
-            except Exception:
-                feat = np.zeros(12, dtype=np.float32)
-
-            features.append(feat)
-
-        return np.array(features, dtype=np.float32) if features else np.zeros((0, 12), dtype=np.float32)
+        return np.concatenate([
+            hyb_onehot,                                          # 6 维
+            [formal_charge, is_aromatic, is_in_ring,             # 3 维
+             is_hbd, is_hba, degree]                             # 3 维
+        ]).astype(np.float32)                                    # 共 12 维
 
     @classmethod
     def from_sdf(cls, sdf_path, keep_hydrogens=False):
