@@ -1,0 +1,11 @@
+python process_pdb_cif.py \
+    --cif_dir /public/home/caozhinan/dataset/RCSB_PDB/divided/ \
+    --output_dir /public/home/caozhinan/dataset/RCSB_PDB/pdb/ \
+    --mmseqs_bin /public/home/caozhinan/miniconda3/envs/proteinflow/bin/mmseqs \
+    --tmalign_bin /public/home/caozhinan/miniconda3/envs/proteinflow/bin/TMalign \
+    --resolution_cutoff 3.5 \
+    --max_residues 6000 \
+    --max_chains 42 \
+    --tmscore_threshold 0.5 \
+    --seq_identity 0.3 \
+    --num_workers 64
