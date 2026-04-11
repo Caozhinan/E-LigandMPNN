@@ -158,37 +158,111 @@ def parse_pdb_all_chains(pdb_path: str) -> list:
 # SDF Parsing — reimplements Molecule.from_sdf + SMILES extraction  
 # =====================================================================  
   
-def parse_sdf(sdf_path: str) -> tuple:  
-    """  
-    Parse SDF file, return (atom_list, atom_coordinate, smiles).  
-    atom_list and atom_coordinate are heavy-atom only (hydrogens removed).  
-    """  
-    warnings.filterwarnings("ignore", category=UserWarning,  
-                            message=".*molecule is tagged as 2D.*")  
-    warnings.filterwarnings("ignore", category=UserWarning,  
-                            message=".*Can't kekulize mol.*")  
-  
-    supplier = Chem.SDMolSupplier(sdf_path)  
-    if len(supplier) == 0 or supplier[0] is None:  
-        raise ValueError(f"Failed to load molecule from SDF: {sdf_path}")  
-  
-    mol = supplier[0]  
-    if mol is None:  
-        raise ValueError(f"Failed to parse molecule: {sdf_path}")  
-    if not mol.GetNumConformers():  
-        raise ValueError(f"No 3D coordinates in: {sdf_path}")  
-  
-    # Remove hydrogens  
-    mol = Chem.RemoveHs(mol)  
-  
-    # SMILES  
-    smiles = Chem.MolToSmiles(mol)  
-  
-    # Atom symbols and 3D coordinates  
-    atom_list = [atom.GetSymbol() for atom in mol.GetAtoms()]  
-    atom_coordinate = mol.GetConformer().GetPositions().astype(np.float64)  
-  
-    return atom_list, atom_coordinate, smiles  
+def _compute_atom_features_from_mol(mol) -> np.ndarray:
+    """Compute 12-dim chemical features for each atom in an RDKit mol.
+    Matches Molecule._compute_atom_features() in protein_chain_241203.py
+    and _compute_atom_features_from_mol() in process_pdb_cif.py."""
+    features = []
+    hybridization_map = {
+        Chem.rdchem.HybridizationType.SP: 0,
+        Chem.rdchem.HybridizationType.SP2: 1,
+        Chem.rdchem.HybridizationType.SP3: 2,
+        Chem.rdchem.HybridizationType.SP3D: 3,
+        Chem.rdchem.HybridizationType.SP3D2: 4,
+    }
+
+    for atom in mol.GetAtoms():
+        try:
+            # Hybridization one-hot (6 dims)
+            hyb = hybridization_map.get(atom.GetHybridization(), 5)
+            hyb_onehot = np.zeros(6, dtype=np.float32)
+            hyb_onehot[hyb] = 1.0
+
+            formal_charge = np.clip(atom.GetFormalCharge() / 2.0, -1.0, 1.0)
+            is_aromatic = float(atom.GetIsAromatic())
+            is_in_ring = float(atom.IsInRing())
+
+            symbol = atom.GetSymbol()
+            num_hs = atom.GetTotalNumHs()
+            is_hbd = 0.0
+            if symbol in ("N", "O", "S") and num_hs > 0:
+                is_hbd = 1.0
+            elif symbol == "N" and atom.GetFormalCharge() > 0:
+                is_hbd = 1.0
+
+            is_hba = 0.0
+            if atom.GetFormalCharge() <= 0:
+                if symbol == "O":
+                    is_hba = 1.0
+                elif symbol == "N":
+                    degree = atom.GetDegree()
+                    hyb_type = atom.GetHybridization()
+                    if hyb_type == Chem.rdchem.HybridizationType.SP3 and degree < 4:
+                        is_hba = 1.0
+                    elif hyb_type == Chem.rdchem.HybridizationType.SP2 and degree < 3:
+                        is_hba = 1.0
+                    elif hyb_type == Chem.rdchem.HybridizationType.SP and degree < 2:
+                        is_hba = 1.0
+                elif symbol == "S":
+                    if atom.GetDegree() <= 2 and not atom.GetIsAromatic():
+                        is_hba = 0.5
+                elif symbol == "F":
+                    is_hba = 0.3
+
+            degree_norm = atom.GetDegree() / 5.0
+
+            feat = np.concatenate([
+                hyb_onehot,
+                [formal_charge, is_aromatic, is_in_ring,
+                 is_hbd, is_hba, degree_norm]
+            ]).astype(np.float32)
+            features.append(feat)
+        except Exception:
+            features.append(np.zeros(12, dtype=np.float32))
+
+    if features:
+        return np.array(features, dtype=np.float32)
+    return np.zeros((0, 12), dtype=np.float32)
+
+
+def parse_sdf(sdf_path: str) -> tuple:
+    """
+    Parse SDF file, return (atom_list, atom_coordinate, smiles, atom_features).
+    atom_list and atom_coordinate are heavy-atom only (hydrogens removed).
+    atom_features is np.ndarray shape [num_atoms, 12] or None on failure.
+    """
+    warnings.filterwarnings("ignore", category=UserWarning,
+                            message=".*molecule is tagged as 2D.*")
+    warnings.filterwarnings("ignore", category=UserWarning,
+                            message=".*Can't kekulize mol.*")
+
+    supplier = Chem.SDMolSupplier(sdf_path)
+    if len(supplier) == 0 or supplier[0] is None:
+        raise ValueError(f"Failed to load molecule from SDF: {sdf_path}")
+
+    mol = supplier[0]
+    if mol is None:
+        raise ValueError(f"Failed to parse molecule: {sdf_path}")
+    if not mol.GetNumConformers():
+        raise ValueError(f"No 3D coordinates in: {sdf_path}")
+
+    # Remove hydrogens
+    mol = Chem.RemoveHs(mol)
+
+    # SMILES
+    smiles = Chem.MolToSmiles(mol)
+
+    # Atom symbols and 3D coordinates
+    atom_list = [atom.GetSymbol() for atom in mol.GetAtoms()]
+    atom_coordinate = mol.GetConformer().GetPositions().astype(np.float64)
+
+    # Compute 12-dim atom features
+    try:
+        atom_features = _compute_atom_features_from_mol(mol)
+    except Exception:
+        atom_features = None
+
+    return atom_list, atom_coordinate, smiles, atom_features  
   
   
 # =====================================================================  
@@ -218,27 +292,32 @@ def chain_state_dict(chain_dict: dict) -> dict:
     return dct  
   
   
-def save_blob(protein_chains: list, atom_list: list,  
-              atom_coordinate: np.ndarray, path: str,  
-              compression_level: int = 11):  
-    """  
-    Serialize protein-ligand complex to blob file.  
-    Format matches ProteinLigandComplex.state_dict() + to_blob().  
-    """  
-    state = {  
-        "protein": [chain_state_dict(c) for c in protein_chains],  
-        "ligand": {  
-            "atom_list": atom_list,  
-            "atom_coordinate": (  
-                atom_coordinate.tolist()  
-                if isinstance(atom_coordinate, np.ndarray)  
-                else atom_coordinate  
-            ),  
-        },  
-    }  
-    blob_data = msgpack.dumps(state)  
-    compressed = brotli.compress(blob_data, quality=compression_level)  
-    with open(path, "wb") as f:  
+def save_blob(protein_chains: list, atom_list: list,
+              atom_coordinate: np.ndarray, atom_features,
+              path: str, compression_level: int = 11):
+    """
+    Serialize protein-ligand complex to blob file.
+    Format matches ProteinLigandComplex.state_dict() + to_blob().
+    """
+    state = {
+        "protein": [chain_state_dict(c) for c in protein_chains],
+        "ligand": {
+            "atom_list": atom_list,
+            "atom_coordinate": (
+                atom_coordinate.tolist()
+                if isinstance(atom_coordinate, np.ndarray)
+                else atom_coordinate
+            ),
+            "atom_features": (
+                atom_features.tolist()
+                if isinstance(atom_features, np.ndarray) and atom_features is not None
+                else None
+            ),
+        },
+    }
+    blob_data = msgpack.dumps(state)
+    compressed = brotli.compress(blob_data, quality=compression_level)
+    with open(path, "wb") as f:
         f.write(compressed)  
   
   
@@ -266,13 +345,13 @@ def process_one(row_dict: dict) -> dict:
     if not protein_chains:  
         raise ValueError(f"No valid protein chains in {receptor_path}")  
   
-    # 2. Parse ligand  
-    atom_list, atom_coordinate, smiles = parse_sdf(ligand_path)  
-    if len(atom_list) == 0:  
-        raise ValueError(f"No heavy atoms in ligand {ligand_path}")  
-  
-    # 3. Save blob  
-    save_blob(protein_chains, atom_list, atom_coordinate, blob_path)  
+    # 2. Parse ligand
+    atom_list, atom_coordinate, smiles, atom_features = parse_sdf(ligand_path)
+    if len(atom_list) == 0:
+        raise ValueError(f"No heavy atoms in ligand {ligand_path}")
+
+    # 3. Save blob
+    save_blob(protein_chains, atom_list, atom_coordinate, atom_features, blob_path)  
   
     # 4. Collect metadata  
     chain_ids = [c["chain_id"] for c in protein_chains]  
@@ -290,7 +369,7 @@ def process_one(row_dict: dict) -> dict:
         "num_Y": num_Y,  
         "chain_idx": str(chain_idx),  
         "Affinity_nM": 100000,  
-        "source": "pdb",  
+        "source": "bindingnetv2",  
         "pdb_chain": name,  
         "target": target,  # temporary, used to assign cluster_id  
     }  
