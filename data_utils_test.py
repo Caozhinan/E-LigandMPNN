@@ -738,7 +738,7 @@ def parse_PDB(
 #     return Y, Y_t, Y_m, D_AB_closest
 
 
-def get_nearest_neighbours(CB, mask, Y, Y_t, Y_m, number_of_ligand_atoms, batch_size=1000):
+def get_nearest_neighbours(CB, mask, Y, Y_t, Y_m, number_of_ligand_atoms, Y_chem=None, batch_size=1000):
     device = CB.device
     num_res = CB.shape[0]  # 残基数量
     num_Y = Y.shape[0]  # 配体点数量
@@ -791,7 +791,15 @@ def get_nearest_neighbours(CB, mask, Y, Y_t, Y_m, number_of_ligand_atoms, batch_
     Y_t_new[:, :num_nn_update] = Y_t_tmp
     Y_m_new[:, :num_nn_update] = Y_m_tmp
 
-    return Y_new, Y_t_new, Y_m_new, D_AB_closest
+    # Y_chem gather
+    Y_chem_new = None
+    if Y_chem is not None:
+        Y_chem_r = Y_chem[None, :, :].repeat(num_res, 1, 1)  # [A, B, 12]
+        Y_chem_tmp = torch.gather(Y_chem_r, 1, nn_idx[:, :, None].repeat(1, 1, Y_chem.shape[-1]))  # [A, K, 12]
+        Y_chem_new = torch.zeros([num_res, number_of_ligand_atoms, Y_chem.shape[-1]], dtype=torch.float32, device=device)
+        Y_chem_new[:, :num_nn_update] = Y_chem_tmp
+
+    return Y_new, Y_t_new, Y_m_new, D_AB_closest, Y_chem_new
 
 def featurize(
     input_dict,
@@ -806,6 +814,7 @@ def featurize(
         Y = input_dict["Y"]
         Y_t = input_dict["Y_t"]
         Y_m = input_dict["Y_m"]
+        Y_chem = input_dict.get("Y_chem", None)
         N = input_dict["X"][:, 0, :]
         CA = input_dict["X"][:, 1, :]
         C = input_dict["X"][:, 2, :]
@@ -814,8 +823,8 @@ def featurize(
         a = torch.cross(b, c, axis=-1)
         CB = -0.58273431 * a + 0.56802827 * b - 0.54067466 * c + CA
 
-        Y, Y_t, Y_m, D_XY = get_nearest_neighbours(
-            CB, mask, Y, Y_t, Y_m, number_of_ligand_atoms
+        Y, Y_t, Y_m, D_XY, Y_chem = get_nearest_neighbours(
+            CB, mask, Y, Y_t, Y_m, number_of_ligand_atoms, Y_chem=Y_chem
         )
 
         mask_XY = (D_XY < cutoff_for_score) * mask * Y_m[:, 0]
@@ -825,6 +834,8 @@ def featurize(
         output_dict["Y"] = Y[None,]
         output_dict["Y_t"] = Y_t[None,]
         output_dict["Y_m"] = Y_m[None,]
+        if Y_chem is not None:
+            output_dict["Y_chem"] = Y_chem[None,]
         if not use_atom_context:
             output_dict["Y_m"] = 0.0 * output_dict["Y_m"]
     elif (
@@ -872,6 +883,7 @@ def bindingnet_featurize(
         Y = input_dict["Y"]
         Y_t = input_dict["Y_t"]
         Y_m = input_dict["Y_m"]
+        Y_chem = input_dict.get("Y_chem", None)
         N = input_dict["X"][:, 0, :]
         CA = input_dict["X"][:, 1, :]
         C = input_dict["X"][:, 2, :]
@@ -879,8 +891,8 @@ def bindingnet_featurize(
         c = C - CA
         a = torch.cross(b, c, axis=-1)
         CB = -0.58273431 * a + 0.56802827 * b - 0.54067466 * c + CA
-        Y, Y_t, Y_m, D_XY = get_nearest_neighbours(
-            CB, mask, Y, Y_t, Y_m, number_of_ligand_atoms
+        Y, Y_t, Y_m, D_XY, Y_chem = get_nearest_neighbours(
+            CB, mask, Y, Y_t, Y_m, number_of_ligand_atoms, Y_chem=Y_chem
         )
         if isinstance(D_XY, int):
             print(input_dict)
@@ -892,6 +904,8 @@ def bindingnet_featurize(
         output_dict["Y"] = Y#[None,]
         output_dict["Y_t"] = Y_t#[None,]
         output_dict["Y_m"] = Y_m#[None,]
+        if Y_chem is not None:
+            output_dict["Y_chem"] = Y_chem#[None,]
         if not use_atom_context:
             output_dict["Y_m"] = 0.0 * output_dict["Y_m"]
     elif (
@@ -1065,10 +1079,17 @@ def parse_PDB_from_complex(
             for atom in complex.molecule.atom_list
         ], dtype=np.int32)  # 分子原子类型
 
+        # 提取化学特征
+        if complex.molecule.atom_features is not None:
+            Y_chem = np.array(complex.molecule.atom_features, dtype=np.float32)
+        else:
+            Y_chem = np.zeros([len(Y), 12], dtype=np.float32)
+
         Y_m = (Y_t != 1) * (Y_t != 0)  # 去掉类型为 1 或 0（即氢原子）的原子
 
         Y = Y[Y_m, :]
         Y_t = Y_t[Y_m]
+        Y_chem = Y_chem[Y_m, :]
         Y_m = Y_m[Y_m]
 
     except Exception as e:
@@ -1076,12 +1097,14 @@ def parse_PDB_from_complex(
         Y = np.zeros([1, 3], dtype=np.float32)
         Y_t = np.zeros([1], dtype=np.int32)
         Y_m = np.zeros([1], dtype=np.int32)
+        Y_chem = np.zeros([1, 12], dtype=np.float32)
 
     Y = add_noise_to_coordinates(Y, noise_std = noise)
 
     output_dict["Y"] = torch.tensor(Y, device=device, dtype=torch.float32)
     output_dict["Y_t"] = torch.tensor(Y_t, device=device, dtype=torch.int32)
     output_dict["Y_m"] = torch.tensor(Y_m, device=device, dtype=torch.int32)
+    output_dict["Y_chem"] = torch.tensor(Y_chem, device=device, dtype=torch.float32)
 
     return output_dict
 
@@ -1308,13 +1331,16 @@ def parse_PDB_from_PDB_complex(
             for atom in pdb_blob.molecule.atom_list
         ], dtype=np.int32)
 
+        # 提取化学特征
+        if pdb_blob.molecule.atom_features is not None:
+            Y_chem = np.array(pdb_blob.molecule.atom_features, dtype=np.float32)
+        else:
+            Y_chem = np.zeros([len(Y), 12], dtype=np.float32)
+
         Y_m = (Y_t != 1) * (Y_t != 0)
-        #print("3")
-        #print(Y.shape)
-        #print(len(Y_m))
         Y = Y[Y_m, :]
-        #print("4")
         Y_t = Y_t[Y_m]
+        Y_chem = Y_chem[Y_m, :]
         Y_m = Y_m[Y_m]
 
     except Exception as e:
@@ -1322,17 +1348,20 @@ def parse_PDB_from_PDB_complex(
         Y = np.zeros([1, 3], dtype=np.float32)
         Y_t = np.zeros([1], dtype=np.int32)
         Y_m = np.zeros([1], dtype=np.int32)
+        Y_chem = np.zeros([1, 12], dtype=np.float32)
     
     if len(Y)==0:
         Y = np.zeros([1, 3], dtype=np.float32)
         Y_t = np.zeros([1], dtype=np.int32)
         Y_m = np.zeros([1], dtype=np.int32)
+        Y_chem = np.zeros([1, 12], dtype=np.float32)
 
     Y = add_noise_to_coordinates(Y, noise_std = noise)
 
     output_dict["Y"] = torch.tensor(Y, device=device, dtype=torch.float32)
     output_dict["Y_t"] = torch.tensor(Y_t, device=device, dtype=torch.int32)
     output_dict["Y_m"] = torch.tensor(Y_m, device=device, dtype=torch.int32)
+    output_dict["Y_chem"] = torch.tensor(Y_chem, device=device, dtype=torch.float32)
 
     return output_dict
 
