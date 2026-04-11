@@ -485,6 +485,8 @@ def extract_metadata_from_cif(
 
         # Early rejection: skip expensive structure parsing for entries
         # that won't pass quality filters.  Disabled in test mode.
+        # Note: resolution=None is allowed (assembly CIF files often lack
+        # resolution metadata); only reject known bad resolution.
         if not skip_quality_filter:
             if resolution is not None and resolution >= resolution_cutoff:
                 return None
@@ -582,10 +584,11 @@ def filter_entries(metadata_list: list, resolution_cutoff: float = 3.5,
         if "X-RAY" not in exp and "ELECTRON MICROSCOPY" not in exp:
             continue
 
-        # Resolution filter (skip entry if resolution info missing)
-        if meta["resolution"] is None:
-            continue
-        if meta["resolution"] >= resolution_cutoff:
+        # Resolution filter: reject entries with known bad resolution.
+        # Entries with resolution=None (e.g. assembly CIF files that lack
+        # resolution metadata) are allowed through — the method filter
+        # above already excludes NMR and other non-structural methods.
+        if meta["resolution"] is not None and meta["resolution"] >= resolution_cutoff:
             continue
 
         # Total chains <= max_chains
