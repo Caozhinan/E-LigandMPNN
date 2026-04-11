@@ -22,6 +22,7 @@ import ast
 import functools
 import logging
 import os
+import pickle
 import re
 import subprocess
 import sys
@@ -348,8 +349,13 @@ def parse_mmcif_chain_from_model(model, chain_id: str, file_id: str = "") -> dic
 
 def _get_cif_resolution(mmcif_dict: dict) -> float:
     """Extract resolution from CIF dictionary."""
-    for key in ["_reflns.d_resolution_high", "_refine.ls_d_res_high",
-                "_em_3d_reconstruction.resolution"]:
+    for key in [
+        "_reflns.d_resolution_high",
+        "_refine.ls_d_res_high",
+        "_em_3d_reconstruction.resolution",
+        "_pdbx_vrpt_summary.PDB_resolution",
+        "_pdbx_vrpt_summary.pdbresolution",
+    ]:
         vals = mmcif_dict.get(key, None)
         if vals:
             for v in (vals if isinstance(vals, list) else [vals]):
@@ -364,11 +370,12 @@ def _get_cif_resolution(mmcif_dict: dict) -> float:
 
 def _get_cif_exp_method(mmcif_dict: dict) -> str:
     """Extract experimental method from CIF dictionary."""
-    vals = mmcif_dict.get("_exptl.method", None)
-    if vals:
-        if isinstance(vals, list):
-            return vals[0].strip().upper()
-        return str(vals).strip().upper()
+    for key in ["_exptl.method", "_pdbx_database_status.status_code_sf"]:
+        vals = mmcif_dict.get(key, None)
+        if vals:
+            if isinstance(vals, list):
+                return vals[0].strip().upper()
+            return str(vals).strip().upper()
     return ""
 
 
@@ -485,6 +492,8 @@ def extract_metadata_from_cif(
 
         # Early rejection: skip expensive structure parsing for entries
         # that won't pass quality filters.  Disabled in test mode.
+        # Note: resolution=None is allowed (assembly CIF files often lack
+        # resolution metadata); only reject known bad resolution.
         if not skip_quality_filter:
             if resolution is not None and resolution >= resolution_cutoff:
                 return None
@@ -565,38 +574,61 @@ def filter_entries(metadata_list: list, resolution_cutoff: float = 3.5,
     If skip_quality_filter is True, only require at least 1 protein chain.
     """
     filtered = []
+    reject_none = 0
+    reject_no_protein = 0
+    reject_exp_method = 0
+    reject_resolution = 0
+    reject_chains = 0
+    reject_residues = 0
+
     for meta in metadata_list:
         if meta is None:
+            reject_none += 1
             continue
 
         # At least 1 protein chain (always required)
         if meta["num_protein_chains"] < 1:
+            reject_no_protein += 1
             continue
 
         if skip_quality_filter:
             filtered.append(meta)
             continue
 
-        # Experimental method filter
+        # Experimental method filter: only filter when exp_method is non-empty.
+        # Empty string means the field is missing from the CIF — not rejected.
         exp = meta["exp_method"]
-        if "X-RAY" not in exp and "ELECTRON MICROSCOPY" not in exp:
-            continue
+        if exp:  # non-empty: apply filter
+            if "X-RAY" not in exp and "ELECTRON MICROSCOPY" not in exp:
+                reject_exp_method += 1
+                continue
 
-        # Resolution filter (skip entry if resolution info missing)
-        if meta["resolution"] is None:
-            continue
-        if meta["resolution"] >= resolution_cutoff:
-            continue
+        # Resolution filter: only filter when resolution is known.
+        # resolution=None means the field is missing from the CIF — not rejected.
+        if meta["resolution"] is not None:
+            if meta["resolution"] >= resolution_cutoff:
+                reject_resolution += 1
+                continue
 
         # Total chains <= max_chains
         if meta["num_total_chains"] > max_chains:
+            reject_chains += 1
             continue
 
         # Total protein residues < max_residues
         if meta["total_protein_residues"] >= max_residues:
+            reject_residues += 1
             continue
 
         filtered.append(meta)
+
+    # Diagnostic: log how many entries were rejected by each filter
+    total_input = len(metadata_list)
+    logger.info(f"  Filter diagnostics (input={total_input}):")
+    logger.info(f"    reject_none={reject_none}, reject_no_protein={reject_no_protein}, "
+                f"reject_exp_method={reject_exp_method}, reject_resolution={reject_resolution}, "
+                f"reject_chains={reject_chains}, reject_residues={reject_residues}")
+    logger.info(f"    passed={len(filtered)}")
 
     return filtered
 
@@ -1207,30 +1239,45 @@ def process_all_cifs(
     max_chains: int = 52,
     num_workers: int = 4,
     skip_quality_filter: bool = False,
+    resume: bool = False,
 ) -> pd.DataFrame:
     """Process all CIF files: extract metadata, filter, process, generate CSV."""
 
-    logger.info(f"Step 1: Extracting metadata from {len(cif_paths)} CIF files...")
+    cache_path = os.path.join(output_dir, "metadata_cache.pkl")
 
-    # Step 1: Extract metadata (parallel)
-    # Use functools.partial to pass resolution_cutoff and skip_quality_filter
-    # so that early rejection inside extract_metadata_from_cif works correctly.
-    _extract_fn = functools.partial(
-        extract_metadata_from_cif,
-        resolution_cutoff=resolution_cutoff,
-        skip_quality_filter=skip_quality_filter,
-    )
-    metadata_list = []
-    with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        futures = {executor.submit(_extract_fn, p): p
-                   for p in cif_paths}
-        for future in tqdm(as_completed(futures), total=len(futures),
-                           desc="Metadata extraction"):
-            result = future.result()
-            if result is not None:
-                metadata_list.append(result)
+    # --resume: load cached metadata from a previous Step 1 run
+    if resume and os.path.exists(cache_path):
+        logger.info(f"Step 1: Loading cached metadata from {cache_path} (--resume)...")
+        with open(cache_path, "rb") as f:
+            metadata_list = pickle.load(f)
+        logger.info(f"  Loaded metadata for {len(metadata_list)} CIF files from cache")
+    else:
+        logger.info(f"Step 1: Extracting metadata from {len(cif_paths)} CIF files...")
 
-    logger.info(f"  Extracted metadata for {len(metadata_list)} CIF files")
+        # Step 1: Extract metadata (parallel)
+        # Use functools.partial to pass resolution_cutoff and skip_quality_filter
+        # so that early rejection inside extract_metadata_from_cif works correctly.
+        _extract_fn = functools.partial(
+            extract_metadata_from_cif,
+            resolution_cutoff=resolution_cutoff,
+            skip_quality_filter=skip_quality_filter,
+        )
+        metadata_list = []
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            futures = {executor.submit(_extract_fn, p): p
+                       for p in cif_paths}
+            for future in tqdm(as_completed(futures), total=len(futures),
+                               desc="Metadata extraction"):
+                result = future.result()
+                if result is not None:
+                    metadata_list.append(result)
+
+        logger.info(f"  Extracted metadata for {len(metadata_list)} CIF files")
+
+        # Cache metadata for --resume
+        with open(cache_path, "wb") as f:
+            pickle.dump(metadata_list, f)
+        logger.info(f"  Metadata cache saved to {cache_path}")
 
     # Step 2: Quality filtering
     logger.info("Step 2: Quality filtering...")
@@ -1681,6 +1728,10 @@ def main():
         "--test", action="store_true",
         help="Test mode: process only 14 test CIF files",
     )
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="Resume from cached metadata (skip Step 1 if metadata_cache.pkl exists)",
+    )
 
     args = parser.parse_args()
 
@@ -1709,6 +1760,7 @@ def main():
             max_residues=args.max_residues,
             max_chains=args.max_chains,
             num_workers=args.num_workers,
+            resume=args.resume,
         )
 
         if df.empty:
