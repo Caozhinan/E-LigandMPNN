@@ -70,7 +70,7 @@ experiment:
   checkpointer:
     dirpath: ckpt/${experiment.wandb.project}/${experiment.wandb.name}/${data.train_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
     save_last: True
-    save_top_k: 3   #----------------------------------
+    save_top_k: 30   #----------------------------------
     monitor: valid/epoch_accuracy #valid_loss #epoch_accuracy #这个也受任务限制，注意了。
     mode: max #max
   # Keep this null. Will be populated at runtime.
