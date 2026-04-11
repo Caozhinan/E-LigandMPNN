@@ -19,6 +19,7 @@ Usage:
 
 import argparse
 import ast
+import functools
 import logging
 import os
 import re
@@ -150,7 +151,7 @@ def chain_state_dict(chain_dict: dict) -> dict:
 
 def save_blob(protein_chains: list, atom_list: list,
               atom_coordinate: np.ndarray, atom_features,
-              path: str, compression_level: int = 11):
+              path: str, compression_level: int = 6):
     """Serialize protein-ligand complex to blob file.
     Format matches ProteinLigandComplex.state_dict() + to_blob()."""
     state = {
@@ -280,6 +281,71 @@ def parse_mmcif_chain(path: str, chain_id: str, file_id: str = None) -> dict:
     }
 
 
+def parse_mmcif_chain_from_model(model, chain_id: str, file_id: str = "") -> dict:
+    """Parse a single protein chain from an already-parsed BioPython model.
+
+    Same logic as parse_mmcif_chain but avoids re-reading and re-parsing
+    the CIF file.  Returns a dict with ProteinChain-compatible fields,
+    or None if invalid.
+    """
+    if chain_id not in [c.id for c in model.get_chains()]:
+        return None
+
+    chain = model[chain_id]
+
+    valid_residues = []
+    residue_indices = []
+
+    for residue in chain:
+        # Skip HETATM
+        if residue.id[0].strip() != "":
+            continue
+        resname = residue.resname.strip().upper()
+        if resname not in STANDARD_AA_3TO1:
+            continue
+        valid_residues.append(residue)
+        residue_indices.append(residue.id[1])
+
+    num_res = len(valid_residues)
+    if num_res == 0:
+        return None
+
+    atom37_positions = np.full((num_res, ATOM37_NUM, 3), np.nan, dtype=np.float32)
+    atom_mask = np.zeros((num_res, ATOM37_NUM), dtype=bool)
+    sequence = []
+
+    for i, residue in enumerate(valid_residues):
+        resname = residue.resname.strip().upper()
+        if resname == "MSE":
+            target_res = "MET"
+        else:
+            target_res = resname
+        aa = STANDARD_AA_3TO1.get(target_res, "X")
+        if len(aa) != 1:
+            aa = "X"
+        sequence.append(aa)
+
+        for atom in residue:
+            atom_name = atom.name.strip().upper()
+            if resname == "MSE" and atom_name == "SE":
+                atom_name = "SD"
+            if atom_name in ATOM37_ORDER:
+                idx = ATOM37_ORDER[atom_name]
+                atom37_positions[i, idx] = atom.coord
+                atom_mask[i, idx] = True
+
+    return {
+        "id": file_id,
+        "sequence": "".join(sequence),
+        "chain_id": chain_id,
+        "entity_id": 1,
+        "residue_index": np.array(residue_indices, dtype=np.int64),
+        "atom37_positions": atom37_positions,
+        "atom37_mask": atom_mask,
+        "foldseek_ss": "",
+    }
+
+
 def _get_cif_resolution(mmcif_dict: dict) -> float:
     """Extract resolution from CIF dictionary."""
     for key in ["_reflns.d_resolution_high", "_refine.ls_d_res_high",
@@ -393,8 +459,20 @@ def _identify_chain_types(structure_model, mmcif_dict: dict):
     return protein_chain_ids, nucleic_chain_ids, ligand_residues
 
 
-def extract_metadata_from_cif(cif_path: str) -> dict:
+def extract_metadata_from_cif(
+    cif_path: str,
+    resolution_cutoff: float = 3.5,
+    skip_quality_filter: bool = False,
+) -> dict:
     """Extract metadata from a single CIF file.
+
+    Args:
+        cif_path: Path to the CIF file.
+        resolution_cutoff: Maximum resolution (entries with resolution >=
+            this value are rejected early).  Passed via functools.partial
+            from process_all_cifs.
+        skip_quality_filter: If True, disable the early rejection so that
+            every CIF proceeds to full parsing (used in test mode).
 
     Returns a dict with metadata fields, or None on failure.
     """
@@ -405,6 +483,14 @@ def extract_metadata_from_cif(cif_path: str) -> dict:
         resolution = _get_cif_resolution(mmcif_dict)
         exp_method = _get_cif_exp_method(mmcif_dict)
 
+        # Early rejection: skip expensive structure parsing for entries
+        # that won't pass quality filters.  Disabled in test mode.
+        if not skip_quality_filter:
+            if resolution is not None and resolution >= resolution_cutoff:
+                return None
+            if exp_method and "X-RAY" not in exp_method and "ELECTRON MICROSCOPY" not in exp_method:
+                return None
+
         parser = MMCIFParser(QUIET=True)
         structure = parser.get_structure(pdb_id, cif_path)
         model = structure[0]
@@ -412,14 +498,30 @@ def extract_metadata_from_cif(cif_path: str) -> dict:
         protein_chain_ids, nucleic_chain_ids, ligand_residues = \
             _identify_chain_types(model, mmcif_dict)
 
-        # Get protein sequences and lengths
+        # Get protein sequences and lengths — directly from model,
+        # avoiding re-parsing the CIF for each chain
         protein_sequences = {}
         total_protein_residues = 0
+        model_chain_ids = {c.id for c in model.get_chains()}
         for cid in protein_chain_ids:
-            chain_data = parse_mmcif_chain(cif_path, cid, file_id=pdb_id)
-            if chain_data and len(chain_data["sequence"]) > 0:
-                protein_sequences[cid] = chain_data["sequence"]
-                total_protein_residues += len(chain_data["sequence"])
+            if cid not in model_chain_ids:
+                continue
+            chain = model[cid]
+            seq = []
+            for residue in chain:
+                if residue.id[0].strip() != "":
+                    continue
+                resname = residue.resname.strip().upper()
+                if resname == "MSE":
+                    resname = "MET"
+                aa = STANDARD_AA_3TO1.get(resname)
+                if aa and len(aa) == 1:
+                    seq.append(aa)
+                elif resname in STANDARD_AA_3TO1:
+                    seq.append("X")
+            if seq:
+                protein_sequences[cid] = "".join(seq)
+                total_protein_residues += len(seq)
 
         # Only keep chains that actually have protein residues
         protein_chain_ids = [cid for cid in protein_chain_ids
@@ -790,6 +892,95 @@ def extract_ligands_from_cif(cif_path: str, blacklist: set = None):
     return all_atom_symbols, atom_coordinate, atom_features
 
 
+def extract_ligands_from_mmcif_dict(mmcif_dict: dict, blacklist: set = None):
+    """Extract non-blacklisted HETATM ligand atoms from a pre-parsed mmcif_dict.
+
+    Same logic as extract_ligands_from_cif but accepts an already-parsed
+    MMCIF2Dict object, avoiding re-reading the CIF file.
+
+    Returns (atom_list, atom_coordinate, atom_features) where:
+      - atom_list: list of element symbols
+      - atom_coordinate: np.ndarray of shape (N, 3)
+      - atom_features: np.ndarray of shape (N, 12) or None
+    """
+    if blacklist is None:
+        blacklist = ARTIFACT_CCD_IDS
+
+    # Get atom_site data
+    group_pdb = mmcif_dict.get("_atom_site.group_PDB", [])
+    comp_ids = mmcif_dict.get("_atom_site.auth_comp_id",
+                              mmcif_dict.get("_atom_site.label_comp_id", []))
+    elements = mmcif_dict.get("_atom_site.type_symbol", [])
+    x_coords = mmcif_dict.get("_atom_site.Cartn_x", [])
+    y_coords = mmcif_dict.get("_atom_site.Cartn_y", [])
+    z_coords = mmcif_dict.get("_atom_site.Cartn_z", [])
+
+    if isinstance(group_pdb, str):
+        group_pdb = [group_pdb]
+    if isinstance(comp_ids, str):
+        comp_ids = [comp_ids]
+
+    all_atom_symbols = []
+    all_atom_coords = []
+    all_resname_groups = defaultdict(lambda: {"symbols": [], "coords": []})
+
+    for i in range(len(group_pdb)):
+        if group_pdb[i] != "HETATM":
+            continue
+
+        resname = comp_ids[i].strip().upper()
+        if resname in blacklist:
+            continue
+        if resname in NUCLEIC_ACID_RESIDUES:
+            continue
+
+        elem = elements[i].strip().upper() if i < len(elements) else ""
+        if elem == "H" or elem == "D":  # Skip hydrogens
+            continue
+
+        try:
+            x = float(x_coords[i])
+            y = float(y_coords[i])
+            z = float(z_coords[i])
+        except (ValueError, IndexError):
+            continue
+
+        all_atom_symbols.append(elem)
+        all_atom_coords.append([x, y, z])
+        all_resname_groups[resname]["symbols"].append(elem)
+        all_resname_groups[resname]["coords"].append([x, y, z])
+
+    if not all_atom_symbols:
+        return [], np.zeros((0, 3), dtype=np.float32), None
+
+    atom_coordinate = np.array(all_atom_coords, dtype=np.float32)
+
+    # Try to build RDKit mol for feature computation
+    atom_features = None
+    try:
+        from rdkit.Geometry import Point3D
+        mol = Chem.RWMol()
+        for sym in all_atom_symbols:
+            # RDKit expects proper capitalization (e.g., "Fe" not "FE")
+            sym_proper = sym.capitalize() if len(sym) > 1 else sym
+            atom = Chem.Atom(sym_proper)
+            mol.AddAtom(atom)
+        conf = Chem.Conformer(len(all_atom_symbols))
+        for i, coord in enumerate(all_atom_coords):
+            conf.SetAtomPosition(i, Point3D(*coord))
+        mol.AddConformer(conf)
+        # Compute implicit valence to avoid RDKit warnings
+        try:
+            mol.UpdatePropertyCache(strict=False)
+        except Exception:
+            pass
+        atom_features = _compute_atom_features_from_mol(mol)
+    except Exception:
+        atom_features = None
+
+    return all_atom_symbols, atom_coordinate, atom_features
+
+
 # =====================================================================
 # Step 4b: Nucleic acid atom extraction
 # =====================================================================
@@ -832,6 +1023,42 @@ def extract_nucleic_acid_atoms(cif_path: str, nuc_chain_ids: list):
         return [], np.zeros((0, 3), dtype=np.float32), None
 
 
+def extract_nucleic_acid_atoms_from_model(model, nuc_chain_ids: list):
+    """Extract non-hydrogen atoms from nucleic acid chains using a pre-parsed model.
+
+    Same logic as extract_nucleic_acid_atoms but avoids re-reading and
+    re-parsing the CIF file.
+
+    Returns (atom_list, atom_coordinate, atom_features=None).
+    """
+    if not nuc_chain_ids:
+        return [], np.zeros((0, 3), dtype=np.float32), None
+
+    try:
+        atom_symbols = []
+        atom_coords = []
+
+        for chain in model.get_chains():
+            if chain.id not in nuc_chain_ids:
+                continue
+            for residue in chain:
+                for atom in residue:
+                    elem = atom.element.strip().upper()
+                    if elem in ("H", "D", ""):
+                        continue
+                    atom_symbols.append(elem)
+                    atom_coords.append(atom.coord.tolist())
+
+        if not atom_symbols:
+            return [], np.zeros((0, 3), dtype=np.float32), None
+
+        return atom_symbols, np.array(atom_coords, dtype=np.float32), None
+
+    except Exception as e:
+        logger.debug(f"Nucleic acid extraction from model failed: {e}")
+        return [], np.zeros((0, 3), dtype=np.float32), None
+
+
 # =====================================================================
 # Step 4: Single CIF processing
 # =====================================================================
@@ -854,10 +1081,16 @@ def process_single_cif(
     os.makedirs(pdb_out_dir, exist_ok=True)
 
     try:
-        # Parse all protein chains
+        # Parse CIF once — reuse model and mmcif_dict for all extractions
+        cif_parser = MMCIFParser(QUIET=True)
+        structure = cif_parser.get_structure(pdb_id, cif_path)
+        model = structure[0]
+        mmcif_dict = MMCIF2Dict(cif_path)
+
+        # Parse all protein chains from the pre-parsed model
         protein_chain_dicts = []
         for cid in meta["protein_chain_ids"]:
-            chain_data = parse_mmcif_chain(cif_path, cid, file_id=pdb_id)
+            chain_data = parse_mmcif_chain_from_model(model, cid, file_id=pdb_id)
             if chain_data and len(chain_data["sequence"]) > 0:
                 protein_chain_dicts.append(chain_data)
 
@@ -880,19 +1113,19 @@ def process_single_cif(
         all_mol_features = None
         features_list = []
 
-        # Extract nucleic acid atoms
+        # Extract nucleic acid atoms from the pre-parsed model
         if has_nucleic:
-            nuc_symbols, nuc_coords, _ = extract_nucleic_acid_atoms(
-                cif_path, meta["nucleic_chain_ids"]
+            nuc_symbols, nuc_coords, _ = extract_nucleic_acid_atoms_from_model(
+                model, meta["nucleic_chain_ids"]
             )
             if nuc_symbols:
                 all_mol_symbols.extend(nuc_symbols)
                 all_mol_coords.append(nuc_coords)
 
-        # Extract ligand atoms
+        # Extract ligand atoms from the pre-parsed mmcif_dict
         if has_ligands:
-            lig_symbols, lig_coords, lig_features = extract_ligands_from_cif(
-                cif_path, ARTIFACT_CCD_IDS
+            lig_symbols, lig_coords, lig_features = extract_ligands_from_mmcif_dict(
+                mmcif_dict, ARTIFACT_CCD_IDS
             )
             if lig_symbols:
                 all_mol_symbols.extend(lig_symbols)
@@ -980,9 +1213,16 @@ def process_all_cifs(
     logger.info(f"Step 1: Extracting metadata from {len(cif_paths)} CIF files...")
 
     # Step 1: Extract metadata (parallel)
+    # Use functools.partial to pass resolution_cutoff and skip_quality_filter
+    # so that early rejection inside extract_metadata_from_cif works correctly.
+    _extract_fn = functools.partial(
+        extract_metadata_from_cif,
+        resolution_cutoff=resolution_cutoff,
+        skip_quality_filter=skip_quality_filter,
+    )
     metadata_list = []
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        futures = {executor.submit(extract_metadata_from_cif, p): p
+        futures = {executor.submit(_extract_fn, p): p
                    for p in cif_paths}
         for future in tqdm(as_completed(futures), total=len(futures),
                            desc="Metadata extraction"):
