@@ -12,3 +12,4 @@ outputs/
 ckpt/
 record/
 train_set/
+wandb/

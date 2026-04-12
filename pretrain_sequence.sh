@@ -8,12 +8,12 @@ TRAIN_CSV="/public/home/caozhinan/BioMPNN/data/csv/pdb_BN2_train.csv"
 VALID_CSV="/public/home/caozhinan/BioMPNN/data/csv/pdb_BN2_valid.csv"  
 NUM_GPUS=8          # 你实际可用的 GPU 数量，按需改  
 MAX_EPOCHS=400  
-BATCH_SIZE=48       # 单卡 max_batch_size  
+BATCH_SIZE=20       # 单卡 max_batch_size  
 ACCUM_GRAD=1        # 梯度累积步数  
-LR=1.2e-4             # 从头训练用较大学习率  
+LR=1e-4             # 从头训练用较大学习率  
 DROPOUT=0.1  
 NOISE=0.1  
-NUM_WORKERS=8  
+NUM_WORKERS=6  
 # ---- 环境 ----  
 
 source /public/home/caozhinan/miniconda3/etc/profile.d/conda.sh
