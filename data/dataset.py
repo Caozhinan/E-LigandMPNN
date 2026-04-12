@@ -323,6 +323,8 @@ class PDBDataset(BaseDataset):
                 feature_dict = parse_PDB_from_PDB_complex( data, chains=ast.literal_eval(csv_row.chain_idx), noise = self.noise, diffusion = self.diffusion, backbone_CB = self.backbone_CB, is_training = self._is_training )
             else:
                 feature_dict = parse_PDB_from_PDB_complex( data, chains=ast.literal_eval(csv_row.chain_idx),  diffusion = self.diffusion, backbone_CB = self.backbone_CB, is_training = self._is_training )
+            if feature_dict is None:
+                return None
             # feature_dict = parse_PDB_from_PDB_complex( data, chains=ast.literal_eval(csv_row.chain_idx) )
         elif csv_row.source == "pdbbind":
             protein_chain = data.protein[csv_row.chain_idx]
@@ -380,17 +382,19 @@ class PDBDataset(BaseDataset):
         return feature_dict
     
     def __getitem__(self, row_idx):
-        try:
-            csv_row = self.csv.iloc[row_idx]
-            feats = self.process_csv_row(csv_row)
-            if feats is None:
-                raise ValueError(f"Empty protein at index {row_idx}, blob: {csv_row.blob_path}")
-            feats['csv_idx'] = torch.ones(1, dtype=torch.long) * row_idx
-            return feats
-        except Exception as e:
-            print(f"[Warning] Skipping bad sample at index {row_idx}: {e}")
-            new_idx = np.random.randint(0, len(self.csv))
-            return self.__getitem__(new_idx)
+        max_retries = 10
+        for attempt in range(max_retries):
+            try:
+                csv_row = self.csv.iloc[row_idx]
+                feats = self.process_csv_row(csv_row)
+                if feats is None:
+                    raise ValueError(f"Empty protein at index {row_idx}, blob: {csv_row.blob_path}")
+                feats['csv_idx'] = torch.ones(1, dtype=torch.long) * row_idx
+                return feats
+            except Exception as e:
+                print(f"[Warning] Skipping bad sample at index {row_idx} (attempt {attempt + 1}/{max_retries}): {e}")
+                row_idx = np.random.randint(0, len(self.csv))
+        raise RuntimeError(f"Failed to load a valid sample after {max_retries} attempts")
 
 
 class Backbone_Dataset(BaseDataset):
