@@ -11,6 +11,10 @@ import pdb
 
 
 def ligandmpnn_collate_fn(batch):
+    # Filter out invalid/dummy samples returned by PDBDataset on retry failure
+    batch = [data for data in batch if not data.get('__invalid__', False)]
+    if len(batch) == 0:
+        return {'__empty_batch__': True}
 
     mask_XY = []
     Y = []

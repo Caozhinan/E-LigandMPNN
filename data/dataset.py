@@ -381,8 +381,32 @@ class PDBDataset(BaseDataset):
         feature_dict["randn"] = torch.randn( [ feature_dict["mask"].shape[0] ] )
         return feature_dict
     
+    def _make_dummy_sample(self):
+        """Return a minimal dummy dict that collate_fn can filter out."""
+        return {
+            '__invalid__': True,
+            'mask_XY': torch.zeros(1),
+            'Y': torch.zeros(1, 3),
+            'Y_t': torch.zeros(1),
+            'Y_m': torch.zeros(1),
+            'R_idx': torch.zeros(1, dtype=torch.long),
+            'R_idx_original': torch.zeros(1, dtype=torch.long),
+            'chain_labels': torch.zeros(1, dtype=torch.long),
+            'S': torch.zeros(1, dtype=torch.long),
+            'chain_mask': torch.zeros(1, dtype=torch.int32),
+            'mask': torch.zeros(1, dtype=torch.int32),
+            'X': torch.zeros(1, 4, 3),
+            'xyz_37': torch.zeros(1, 37, 3),
+            'xyz_37_m': torch.zeros(1, 37),
+            'randn': torch.zeros(1),
+            'csv_idx': torch.zeros(1, dtype=torch.long),
+        }
+
     def __getitem__(self, row_idx):
         max_retries = 10
+        original_row = self.csv.iloc[row_idx]
+        original_seq_len = original_row.get('seq_length', None)
+
         for attempt in range(max_retries):
             try:
                 csv_row = self.csv.iloc[row_idx]
@@ -393,8 +417,21 @@ class PDBDataset(BaseDataset):
                 return feats
             except Exception as e:
                 print(f"[Warning] Skipping bad sample at index {row_idx} (attempt {attempt + 1}/{max_retries}): {e}")
-                row_idx = np.random.randint(0, len(self.csv))
-        raise RuntimeError(f"Failed to load a valid sample after {max_retries} attempts")
+                # Pick replacement with similar seq_length (±200) to avoid OOM from pad_sequence
+                if original_seq_len is not None:
+                    similar_indices = np.where(
+                        np.abs(self.csv['seq_length'].values - original_seq_len) <= 200
+                    )[0]
+                    if len(similar_indices) > 0:
+                        row_idx = np.random.choice(similar_indices)
+                    else:
+                        row_idx = np.random.randint(0, len(self.csv))
+                else:
+                    row_idx = np.random.randint(0, len(self.csv))
+
+        # All retries failed — return dummy sample that collate_fn will filter out
+        print(f"[Warning] All {max_retries} retries failed, returning dummy sample")
+        return self._make_dummy_sample()
 
 
 class Backbone_Dataset(BaseDataset):

@@ -235,6 +235,10 @@ class pretrain_sequence_module:
         )
 
     def training_step(self, batch: Any, stage: int):
+        # Skip empty batches (all samples were invalid/dummy)
+        if isinstance(batch, dict) and batch.get('__empty_batch__', False):
+            return torch.tensor(0.0, requires_grad=True, device=self.device)
+
         S=batch['S']
         #S = S.to(dtype=torch.long,device="cuda:0")
         chain_M = batch['chain_mask']
