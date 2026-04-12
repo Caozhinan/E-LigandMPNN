@@ -1019,7 +1019,7 @@ def parse_PDB_from_complex(
 
     output_coords = np.concatenate(backbone_coords, axis=0)  # (总残基数, 4, 3)
     #Add Gaussion Noise
-    #output_coords = add_noise_to_coordinates(output_coords, noise_std = noise)
+    output_coords = add_noise_to_coordinates(output_coords, noise_std = noise)
 
     output_mask = np.concatenate(backbone_masks, axis=0)  # (总残基数,)
     xyz_37 = np.concatenate(xyz_37_list, axis=0)  # (总残基数, 37, 3)
@@ -1176,7 +1176,7 @@ def parse_PDB_from_PDB_complex(
         #chain.sequence = "".join(np.array(list(chain.sequence))[ca_present_mask])
 
         sequence_mask = np.array([1 if res != "X" else 0 for res in chain.sequence])
-        
+        sequence_mask = sequence_mask[ca_present_mask]  # 与 ca_present_mask 过滤后的 atom37_mask 对齐
         # assert len(chain.atom37_mask)==len(chain.sequence)
         #try:
         residue_mask = ( atom37_mask[:, atom_order["N"]] & atom37_mask[:, atom_order["C"]] & atom37_mask[:, atom_order["O"]] & sequence_mask )
@@ -1433,6 +1433,7 @@ def parse_PDB_from_backbone(
         #chain.sequence = "".join(np.array(list(chain.sequence))[ca_present_mask])
 
         sequence_mask = np.array([1 if res != "X" else 0 for res in chain.sequence])
+        sequence_mask = sequence_mask[ca_present_mask]  # 与 ca_present_mask 过滤后的 atom37_mask 对齐
         
         # assert len(chain.atom37_mask)==len(chain.sequence)
 

@@ -13,8 +13,9 @@ import pdb
 #from sklearn.preprocessing import PolynomialFeatures
 #from sklearn.linear_model import LinearRegression
 #from data import residue_constants
-import sys
-sys.path.append("/xcfhome/ypxia/Workspace/LigandMPNN/utils")
+import sys, os
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "utils"))
+
 #pdb.set_trace()
 from structure.protein_chain_241203 import *
 from data_utils_test import parse_PDB_from_complex,featurize,bindingnet_featurize,parse_PDB_from_PDB_complex,parse_PDB_from_backbone

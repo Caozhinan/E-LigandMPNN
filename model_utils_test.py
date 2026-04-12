@@ -2048,7 +2048,8 @@ class DecLayerWithAttn(torch.nn.Module):
         # 注意力聚合替代 sum/scale
         attn_logits = self.W_attn(h_message).squeeze(-1)  # [B, L, M]
         if mask_attend is not None:
-            attn_logits = attn_logits.masked_fill(mask_attend == 0, -1e9)
+            attn_logits = attn_logits.masked_fill(mask_attend == 0, torch.finfo(attn_logits.dtype).min)
+
         attn_weights = torch.nn.functional.softmax(attn_logits, dim=-1)  # [B, L, M]
         dh = torch.sum(attn_weights.unsqueeze(-1) * h_message, dim=-2)  # [B, L, hidden]
         h_V = self.norm1(h_V + self.dropout1(dh))

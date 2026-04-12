@@ -32,8 +32,9 @@ from esm.utils.structure.normalize_coordinates import (
     get_protein_normalization_frame,
     normalize_coordinates,
 )
-import sys
-sys.path.append("/xcfhome/ypxia/Workspace/LigandMPNN/utils")
+import sys,os
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "utils"))
+
 from foldseek_util import get_struc_seq
 from collections import defaultdict
 msgpack_numpy.patch()

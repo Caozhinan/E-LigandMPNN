@@ -28,8 +28,8 @@ from torch.cuda.amp import autocast, GradScaler
 from pytorch_lightning.loggers.wandb import WandbLogger
 import pdb
 
-import sys
-sys.path.append("/xcfhome/ypxia/Workspace/BioMPNN")
+import sys,os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from model_utils_test import ProteinMPNN,get_std_opt,loss_smoothed,loss_nll
 from data_utils_test import get_score, save_pdb
 from torch.optim.lr_scheduler import LambdaLR
