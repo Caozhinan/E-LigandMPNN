@@ -1154,6 +1154,9 @@ def parse_PDB_from_PDB_complex(
 
     
     filtered_protein = [chain for chain in pdb_blob.protein if len(chain.sequence) >= min_chain_length]
+
+    if len(filtered_protein) == 0:
+        return None
     
     for chain_idx, chain in enumerate(filtered_protein):
 
