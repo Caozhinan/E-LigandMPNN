@@ -380,12 +380,17 @@ class PDBDataset(BaseDataset):
         return feature_dict
     
     def __getitem__(self, row_idx):
-        csv_row = self.csv.iloc[row_idx]
-        feats = self.process_csv_row(csv_row) # get initial features.
-#         if feats['R_idx'].shape[0] != feats['Y'].shape[0]:
-#             print(csv_row)
-        feats['csv_idx'] = torch.ones(1, dtype=torch.long) * row_idx #这个是1的长度
-        return feats
+        try:
+            csv_row = self.csv.iloc[row_idx]
+            feats = self.process_csv_row(csv_row)
+            if feats is None:
+                raise ValueError(f"Empty protein at index {row_idx}, blob: {csv_row.blob_path}")
+            feats['csv_idx'] = torch.ones(1, dtype=torch.long) * row_idx
+            return feats
+        except Exception as e:
+            print(f"[Warning] Skipping bad sample at index {row_idx}: {e}")
+            new_idx = np.random.randint(0, len(self.csv))
+            return self.__getitem__(new_idx)
 
 
 class Backbone_Dataset(BaseDataset):
