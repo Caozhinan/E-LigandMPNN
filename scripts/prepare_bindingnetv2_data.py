@@ -46,7 +46,7 @@ BLOB_OUTPUT_DIR = "/public/home/caozhinan/blob/bindingnetv2_blob/"
 OUTPUT_CSV = "/public/home/caozhinan/BioMPNN/train_set/bindingnetv2_assemble_info.csv"  
 MERGED_CSV = "/public/home/caozhinan/BioMPNN/train_set/merged_train_with_bindingnetv2.csv"  
 FAILED_CSV = "/public/home/caozhinan/BioMPNN/train_set/bindingnetv2_failed.csv"  
-MAX_WORKERS = 8  
+MAX_WORKERS = 14  
   
   
 # =====================================================================  

@@ -8,4 +8,5 @@ python process_pdb_cif.py \
     --max_chains 42 \
     --tmscore_threshold 0.5 \
     --seq_identity 0.3 \
-    --num_workers 64
+    --num_workers 62 \
+    --resume
