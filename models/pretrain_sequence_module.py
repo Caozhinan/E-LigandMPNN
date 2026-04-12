@@ -256,6 +256,9 @@ class pretrain_sequence_module:
         train_batch_acc = torch.sum(true_false * mask_for_loss).cpu().data.numpy()
         train_batch_weights = torch.sum(mask_for_loss).cpu().data.numpy()
 
+        # 防止除零
+        train_batch_weights = max(train_batch_weights, 1e-8)
+
         batch_loss = train_batch_sum / train_batch_weights
         train_batch_accuracy = train_batch_acc / train_batch_weights
         train_batch_perplexity = np.exp(batch_loss)
