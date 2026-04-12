@@ -163,6 +163,9 @@ class mpnnModule(LightningModule):
         )
 
     def training_step(self, batch: Any, stage: int):
+        # Skip empty batches (all samples were invalid/dummy)
+        if isinstance(batch, dict) and batch.get('__empty_batch__', False):
+            return torch.tensor(0.0, requires_grad=True, device=self.device)
         return self._task_module.training_step(batch, stage)
 
 
