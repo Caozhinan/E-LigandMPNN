@@ -141,6 +141,9 @@ class pretrain_sequence_module:
         valid_batch_acc = torch.sum(true_false * mask_for_loss).cpu().data.numpy()
         valid_batch_weights = torch.sum(mask_for_loss).cpu().data.numpy()
 
+        # 防止除零
+        valid_batch_weights = max(valid_batch_weights, 1e-8)
+
         batch_loss = valid_batch_sum / valid_batch_weights
         valid_batch_accuracy = valid_batch_acc / valid_batch_weights
         valid_batch_perplexity = np.exp(batch_loss)
@@ -161,6 +164,10 @@ class pretrain_sequence_module:
         # valid_batch_sum = torch.sum(loss * mask_for_loss).cpu().data.numpy()
         valid_batch_XY_acc = torch.sum(true_false * mask_for_XY_loss).cpu().data.numpy()
         valid_batch_XY_weights = torch.sum(mask_for_XY_loss).cpu().data.numpy()
+
+        # 防止除零
+        valid_batch_XY_weights = max(valid_batch_XY_weights, 1e-8)
+
         # batch_loss = valid_batch_sum / valid_batch_weights
         valid_batch_accuracy = valid_batch_XY_acc / valid_batch_XY_weights
         # valid_batch_perplexity = np.exp(batch_loss)
@@ -182,8 +189,12 @@ class pretrain_sequence_module:
         self.valid_XY_weights = 0.
         
     def on_validation_epoch_end(self):
-        valid_loss = self.valid_sum / self.valid_weights
-        valid_accuracy = self.valid_acc / self.valid_weights
+        # 防止除零
+        valid_weights = max(self.valid_weights, 1e-8)
+        valid_XY_weights = max(self.valid_XY_weights, 1e-8)
+
+        valid_loss = self.valid_sum / valid_weights
+        valid_accuracy = self.valid_acc / valid_weights
         valid_perplexity = np.exp(valid_loss)
 
         valid_perplexity_ = round(np.float32(valid_perplexity), 3)
@@ -194,25 +205,36 @@ class pretrain_sequence_module:
             valid_perplexity_,
             on_step=False,
             on_epoch=True,
-            prog_bar=True
+            prog_bar=True,
+            sync_dist=True,
+            rank_zero_only=False
         )
         self.log(
             'valid/epoch_accuracy',
             valid_accuracy_,
             on_step=False,
             on_epoch=True,
-            prog_bar=True
+            prog_bar=True,
+            sync_dist=True,
+            rank_zero_only=False
         )
 
-        valid_XY_accuracy = self.valid_XY_acc / self.valid_XY_weights
+        valid_XY_accuracy = self.valid_XY_acc / valid_XY_weights
         valid_XY_accuracy_ = round(np.float32(valid_XY_accuracy), 3)
         self.log(
             'valid/epoch_XY_accuracy',
             valid_XY_accuracy_,
             on_step=False,
             on_epoch=True,
-            prog_bar=True
+            prog_bar=True,
+            sync_dist=True,
+            rank_zero_only=False
         )
+
+        # 显式打印，这样每个 epoch 结束都能在终端看到一行
+        print(f"\n[Valid] epoch_perplexity={valid_perplexity_}, "
+              f"epoch_accuracy={valid_accuracy_}, "
+              f"epoch_XY_accuracy={valid_XY_accuracy_}")
 
     def _log_scalar(
             self,
