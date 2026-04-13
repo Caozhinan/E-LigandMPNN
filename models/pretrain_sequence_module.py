@@ -201,14 +201,18 @@ class pretrain_sequence_module:
             valid_perplexity_,
             on_step=False,
             on_epoch=True,
-            prog_bar=True
+            prog_bar=True,
+            sync_dist=True,
+            rank_zero_only=False
         )
         self.log(
             'valid/epoch_accuracy',
             valid_accuracy_,
             on_step=False,
             on_epoch=True,
-            prog_bar=True
+            prog_bar=True,
+            sync_dist=True,
+            rank_zero_only=False
         )
 
         valid_XY_accuracy = self.valid_XY_acc / valid_XY_weights
@@ -218,8 +222,15 @@ class pretrain_sequence_module:
             valid_XY_accuracy_,
             on_step=False,
             on_epoch=True,
-            prog_bar=True
+            prog_bar=True,
+            sync_dist=True,
+            rank_zero_only=False
         )
+
+        # 显式打印，这样每个 epoch 结束都能在终端看到一行
+        print(f"\n[Valid] epoch_perplexity={valid_perplexity_}, "
+              f"epoch_accuracy={valid_accuracy_}, "
+              f"epoch_XY_accuracy={valid_XY_accuracy_}")
 
     def _log_scalar(
             self,
