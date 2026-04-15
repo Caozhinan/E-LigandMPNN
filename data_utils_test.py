@@ -7,7 +7,7 @@ from prody import *
 import pdb
 confProDy(verbosity="none")
 import sys
-sys.path.append("/xcfhome/ypxia/Workspace/BioMPNN/utils")
+sys.path.append("/public/home/caozhinan/BioMPNN")
 from scipy.spatial import cKDTree
 from structure.protein_chain_241203 import *
 from openfold.np.residue_constants import new_rigid_group_atom_positions,atom_types as atom37_type#,restype_1to3
