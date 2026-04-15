@@ -318,7 +318,7 @@ def process_single_cif(
     B, L = feature_dict["S"].shape
     feature_dict["batch_size"] = num_samples
     feature_dict["temperature"] = temperature
-    feature_dict["randn"] = torch.randn(1, L, device=device)
+    feature_dict["randn"] = torch.randn(num_samples, L, device=device)
     feature_dict["symmetry_residues"] = [[]]
     feature_dict["symmetry_weights"] = [[]]
 
