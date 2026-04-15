@@ -51,6 +51,11 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 _PROJECT_ROOT = _SCRIPT_DIR.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
+# data_utils_test.py imports "from structure.protein_chain_241203 import *"
+# which requires the utils/ directory to be on sys.path.
+_UTILS_DIR = str(_PROJECT_ROOT / "utils")
+if _UTILS_DIR not in sys.path:
+    sys.path.insert(0, _UTILS_DIR)
 
 # Suppress noisy warnings
 warnings.filterwarnings("ignore")
