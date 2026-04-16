@@ -148,7 +148,7 @@ class BindingNetDataset(BaseDataset):
 
         feature_dict = bindingnet_featurize(
                     feature_dict,
-                    cutoff_for_score=8.0,
+                    cutoff_for_score=6.0,
                     use_atom_context=1,
                     number_of_ligand_atoms=30,
                     model_type="ligand_mpnn",
@@ -243,7 +243,7 @@ class MergeDataset(BaseDataset):
 
         feature_dict = bindingnet_featurize(
                     feature_dict,
-                    cutoff_for_score=5.0,
+                    cutoff_for_score=6.0,
                     use_atom_context=1,
                     number_of_ligand_atoms=30,
                     model_type="ligand_mpnn",
@@ -344,7 +344,7 @@ class PDBDataset(BaseDataset):
 
             feature_dict = bindingnet_featurize(
                         feature_dict,
-                        cutoff_for_score=5.0,
+                        cutoff_for_score=6.0,
                         use_atom_context=1,
                         number_of_ligand_atoms=30,
                         model_type="ligand_mpnn",
@@ -371,7 +371,7 @@ class PDBDataset(BaseDataset):
 
         feature_dict = bindingnet_featurize(
                     feature_dict,
-                    cutoff_for_score=5.0,
+                    cutoff_for_score=6.0,
                     use_atom_context=1,
                     number_of_ligand_atoms=30,
                     model_type="ligand_mpnn",
@@ -489,7 +489,7 @@ class Backbone_Dataset(BaseDataset):
 
         feature_dict = bindingnet_featurize(
                     feature_dict,
-                    cutoff_for_score=5.0,
+                    cutoff_for_score=6.0,
                     use_atom_context=1,
                     number_of_ligand_atoms=30,
                     model_type="ligand_mpnn",

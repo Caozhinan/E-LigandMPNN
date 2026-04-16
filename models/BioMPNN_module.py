@@ -53,7 +53,7 @@ class mpnnModule(LightningModule):
                 hidden_dim=128,
                 num_encoder_layers=3,
                 num_decoder_layers=3,
-                k_neighbors=32,
+                k_neighbors=48,
                 #augment_eps=self._exp_cfg.noise_level,
                 dropout=self._exp_cfg.dropout,
                 device=None,
@@ -174,10 +174,27 @@ class mpnnModule(LightningModule):
 
     def configure_optimizers(self):
         trainable_params = [p for p in self.model.parameters() if p.requires_grad]
-        return torch.optim.AdamW(
-            params=trainable_params, #self.model.parameters(),
+        optimizer = torch.optim.AdamW(
+            params=trainable_params,
             **self._exp_cfg.optimizer
         )
+        warmup_steps = 3000
+
+        def lr_lambda(step):
+            step = max(step, 1)
+            if step < warmup_steps:
+                return step / warmup_steps          # linear warmup: 0 → 1
+            return (warmup_steps / step) ** 0.5     # inverse sqrt decay
+
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+            },
+        }
 
     def on_predict_start(self):
         return self._task_module.on_predict_start()

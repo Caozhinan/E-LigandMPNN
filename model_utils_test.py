@@ -2302,7 +2302,7 @@ def loss_smoothed(S, log_probs, mask, weight=0.1):
     S_onehot = S_onehot / S_onehot.sum(-1, keepdim=True)
 
     loss = -(S_onehot * log_probs).sum(-1)
-    loss_av = torch.sum(loss * mask) / 2000.0 #fixed 
+    loss_av = torch.sum(loss * mask) / (torch.sum(mask) + 1e-8) 
     return loss, loss_av
 
 
