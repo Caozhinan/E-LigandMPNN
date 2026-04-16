@@ -200,7 +200,7 @@ def load_model(ckpt_path: str, device: torch.device) -> ProteinMPNN:
         hidden_dim=128,
         num_encoder_layers=3,
         num_decoder_layers=3,
-        k_neighbors=32,
+        k_neighbors=48,
         dropout=0.0,
         device=None,
         atom_context_num=30,
@@ -303,7 +303,7 @@ def process_single_cif(
             feature_dict,
             model_type="ligand_mpnn",
             number_of_ligand_atoms=30,
-            cutoff_for_score=8.0,
+            cutoff_for_score=6.0,
         )
     except Exception as e:
         print(f"    [ERROR] featurize failed: {e}")

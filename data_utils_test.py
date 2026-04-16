@@ -803,7 +803,7 @@ def get_nearest_neighbours(CB, mask, Y, Y_t, Y_m, number_of_ligand_atoms, Y_chem
 
 def featurize(
     input_dict,
-    cutoff_for_score=8.0,
+    cutoff_for_score=6.0,
     use_atom_context=True,
     number_of_ligand_atoms=16,
     model_type="protein_mpnn",
@@ -872,7 +872,7 @@ def featurize(
 
 def bindingnet_featurize(
     input_dict,
-    cutoff_for_score=8.0,
+    cutoff_for_score=6.0,
     use_atom_context=True,
     number_of_ligand_atoms=16,
     model_type="protein_mpnn",
@@ -1555,7 +1555,7 @@ def loss_smoothed(S, log_probs, mask, weight=0.1):
     S_onehot = S_onehot / S_onehot.sum(-1, keepdim=True)
 
     loss = -(S_onehot * log_probs).sum(-1)
-    loss_av = torch.sum(loss * mask) / 2000.0 #fixed 
+    loss_av = torch.sum(loss * mask) / (torch.sum(mask) + 1e-8) 
     return loss, loss_av
 
 
