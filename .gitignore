@@ -13,3 +13,4 @@ ckpt/
 record/
 train_set/
 wandb/
+test_set/
