@@ -10,7 +10,7 @@ NUM_GPUS=8
 MAX_EPOCHS=200
 BATCH_SIZE=20
 ACCUM_GRAD=1
-LR=5e-4              # peak lr，配合 warmup 3000 步 + inverse sqrt decay
+LR=4e-4              # peak lr，配合 warmup 3000 步 + inverse sqrt decay
 WEIGHT_DECAY=0.001
 DROPOUT=0.1
 NOISE=0.1
@@ -39,7 +39,7 @@ python experiment/train_ligandmpnn.py \
     data.train_name=pretrain_sequence_pdb_only \
     data.sampler.max_batch_size=${BATCH_SIZE} \
     data.sampler.examples_in_cluster=5 \
-    data.sampler.examples_in_cluster_bnetv2=8 \
+    data.sampler.examples_in_cluster_bnetv2=2 \
     data.loader.num_workers=${NUM_WORKERS} \
     shared.noise=${NOISE} \
     pdb_dataset.train_csv_path=${TRAIN_CSV} \
