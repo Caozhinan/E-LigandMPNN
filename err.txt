@@ -50,3 +50,41 @@ LOCAL_RANK: 1 - CUDA_VISIBLE_DEVICES: [0,1,2,3,4,5,6,7]
 /public/home/caozhinan/miniconda3/envs/proteinflow/lib/python3.10/site-packages/pytorch_lightning/trainer/connectors/logger_connector/result.py:439: It is recommended to use `self.log('train/epoch_perplexity', ..., sync_dist=True)` when logging on epoch level in distributed setting to accumulate the metric across devices.
 /public/home/caozhinan/miniconda3/envs/proteinflow/lib/python3.10/site-packages/pytorch_lightning/trainer/connectors/logger_connector/result.py:439: It is recommended to use `self.log('train/epoch_accuracy', ..., sync_dist=True)` when logging on epoch level in distributed setting to accumulate the metric across devices.
 /public/home/caozhinan/miniconda3/envs/proteinflow/lib/python3.10/site-packages/pytorch_lightning/trainer/connectors/logger_connector/result.py:439: It is recommended to use `self.log('train/epoch_time_minutes', ..., sync_dist=True)` when logging on epoch level in distributed setting to accumulate the metric across devices.
+`Trainer.fit` stopped: `max_epochs=200` reached.
+wandb: Waiting for W&B process to finish... (success).
+wandb: - 0.000 MB of 0.000 MB uploaded (0.000 MB deduped)wandb: 
+wandb: Run history:
+wandb:                    epoch ▁▁▁▂▂▂▂▂▂▃▃▃▃▃▄▄▄▄▄▄▅▅▅▅▅▅▆▆▆▆▆▇▇▇▇▇▇███
+wandb:     train/batch_accuracy ▃▂▁▂▄▅▅▄▃▃▃▃▆▃█▂▅▃▄▃▄▂▆▅▃▆▇▂▁▅▅▅▄▃▇▆▅▂▅▁
+wandb:   train/batch_perplexity ▅▇█▅▃▃▂▃▄▅▄▄▂▅▁▆▂▅▄▄▄▆▂▃▅▂▁▅▇▃▃▂▃▅▁▂▃▆▂█
+wandb:     train/epoch_accuracy ▁▄▅▆▆▆▆▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇██████████████████
+wandb:   train/epoch_perplexity █▄▃▃▂▂▂▂▂▂▂▂▂▂▂▁▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+wandb: train/epoch_time_minutes ▅█▂▆▂▄▂▂▄▃▅▃▄▃▃▄▃▄▂▃▁▁▁▃▃▅▄▁▅▃▄▄▄▃▅▃▅▃▂▃
+wandb:               train/loss ▆▇█▇▅▄▄▅▆▆▆▆▃▆▁▇▄▆▅▆▅▇▃▄▆▃▂▇█▄▄▄▅▆▂▃▄▇▃█
+wandb:      trainer/global_step ▁▁▁▂▂▂▂▂▂▃▃▃▁▃▃▄▂▄▄▄▅▅▅▅▂▅▆▆▂▆▆▇▂▇▇▇▂███
+wandb:  valid/batch_XY_accuracy ▄▄▅▃▄▅▃▄▄▄▅█▃▄▁▄▃▅▅▄▇▆▄▅▁▅▁▅▆▄▅▅▁▇▆▅▅▇▃▅
+wandb:     valid/batch_accuracy ▂▂▃▃▂▂▂▂▂▃▂█▂▃▂▂▂▃▄▁▃▂▂▆▂▄▄▆▃▃▃▂▃▅▂▃▄▃▃▂
+wandb:   valid/batch_perplexity ▆▆▄▅▇▅▅▅▅▅▅▁▆▅▇▅▅▅▃█▅▆▅▂▅▃▄▂▄▅▄▅▅▃▆▅▄▅▅▅
+wandb:  valid/epoch_XY_accuracy ▁▅▆▆▇▇▇▇▇▇▇▇█▇█▇███▇████████████████████
+wandb:     valid/epoch_accuracy ▁▄▅▆▆▇▇▇▇▇▇▇▇▇▇▇▇██▇████████████████████
+wandb:   valid/epoch_perplexity █▄▃▃▂▂▂▂▂▂▂▂▁▂▁▂▂▁▁▂▁▁▁▁▁▁▁▁▁▂▁▁▁▁▁▁▁▁▁▁
+wandb: 
+wandb: Run summary:
+wandb:                    epoch 199
+wandb:     train/batch_accuracy 0.584
+wandb:   train/batch_perplexity 3.973
+wandb:     train/epoch_accuracy 0.63
+wandb:   train/epoch_perplexity 3.394
+wandb: train/epoch_time_minutes 10.95292
+wandb:               train/loss 1.65169
+wandb:      trainer/global_step 648599
+wandb:  valid/batch_XY_accuracy 0.5
+wandb:     valid/batch_accuracy 0.397
+wandb:   valid/batch_perplexity 6.442
+wandb:  valid/epoch_XY_accuracy 0.51162
+wandb:     valid/epoch_accuracy 0.50587
+wandb:   valid/epoch_perplexity 5.03562
+wandb: 
+wandb: You can sync this run to the cloud by running:
+wandb: wandb sync ./wandb/offline-run-20260416_221555-hx88tbst
+wandb: Find logs at: ./wandb/offline-run-20260416_221555-hx88tbst/logs
