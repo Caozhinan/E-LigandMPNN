@@ -34,7 +34,7 @@ class ProteinMPNN(torch.nn.Module):
         num_encoder_layers=3,
         num_decoder_layers=3,
         vocab=21,
-        k_neighbors=48,
+        k_neighbors=32,
         augment_eps=0.0,
         dropout=0.0,
         device=None,
@@ -81,24 +81,24 @@ class ProteinMPNN(torch.nn.Module):
             self.V_C_norm = torch.nn.LayerNorm(hidden_dim)
 
             self.context_encoder_layers = torch.nn.ModuleList(
-                [DecLayerWithAttn(hidden_dim, hidden_dim * 2, dropout=dropout) for _ in range(4)]
+                [DecLayerWithAttn(hidden_dim, hidden_dim * 2, dropout=dropout) for _ in range(3)]
             )
 
             self.y_context_encoder_layers = torch.nn.ModuleList(
-                [DecLayerJ(hidden_dim, hidden_dim, dropout=dropout) for _ in range(4)]
+                [DecLayerJ(hidden_dim, hidden_dim, dropout=dropout) for _ in range(3)]
             )
 
             # 增强 E：动态 h_E_context 更新层
             self.dynamic_context_proj = torch.nn.ModuleList(
-                [torch.nn.Linear(hidden_dim * 2, hidden_dim, bias=True) for _ in range(4)]
+                [torch.nn.Linear(hidden_dim * 2, hidden_dim, bias=True) for _ in range(3)]
             )
 
             # 增强 A：蛋白→配体门控注入层
             self.protein_to_ligand_proj = torch.nn.ModuleList(
-                [torch.nn.Linear(hidden_dim, hidden_dim, bias=True) for _ in range(4)]
+                [torch.nn.Linear(hidden_dim, hidden_dim, bias=True) for _ in range(3)]
             )
             self.protein_to_ligand_gate = torch.nn.ModuleList(
-                [torch.nn.Linear(hidden_dim * 2, hidden_dim, bias=True) for _ in range(4)]
+                [torch.nn.Linear(hidden_dim * 2, hidden_dim, bias=True) for _ in range(3)]
             )
             for gate_layer in self.protein_to_ligand_gate:
                 torch.nn.init.constant_(gate_layer.bias, -2.0)

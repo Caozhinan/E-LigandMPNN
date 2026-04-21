@@ -21,6 +21,99 @@ from structure.protein_chain_241203 import *
 from data_utils_test import parse_PDB_from_complex,featurize,bindingnet_featurize,parse_PDB_from_PDB_complex,parse_PDB_from_backbone
 import ast
 
+
+# Element types (atomic numbers) for the last 32 atoms of the atom37 representation
+# (CG, CG1, CG2, OG, OG1, SG, CD, CD1, CD2, ND1, ND2, OD1, OD2, SD,
+#  CE, CE1, CE2, CE3, NE, NE1, NE2, OE1, OE2, CH2, NH1, NH2, OH, CZ, CZ2, CZ3, NZ, OXT).
+# Must match model_utils_test.ProteinFeaturesLigand.side_chain_atom_types exactly.
+_SIDE_CHAIN_ATOM_TYPES = torch.tensor(
+    [6, 6, 6, 8, 8, 16, 6, 6, 6, 7, 7, 8, 8, 16, 6, 6, 6, 6, 7, 7, 7, 8, 8, 6, 7, 7, 8, 6, 6, 6, 7, 8],
+    dtype=torch.int32,
+)
+
+
+def sidechain_augmentation(feature_dict, augment_prob=0.5, min_frac=0.02, max_frac=0.04):
+    """Randomly promote a small fraction (2-4%) of protein residues' side-chain atoms
+    into the context ligand atom pool (Y, Y_t, Y_m / Y_chem). The selected residues
+    are removed from chain_mask (set to 0) so they do not contribute to the design loss.
+
+    Must be applied BEFORE bindingnet_featurize so the new atoms participate in the
+    nearest-neighbour (30 atoms) selection.
+
+    Args:
+        feature_dict: dict containing at least X, mask, chain_mask, xyz_37, xyz_37_m,
+            Y [N, 3], Y_t [N], Y_m [N] (and optionally Y_chem [N, 12]).
+        augment_prob: probability of triggering augmentation on a sample.
+        min_frac, max_frac: fraction bounds for residues selected for augmentation.
+
+    Returns:
+        The (in-place updated) feature_dict.
+    """
+    if random.random() > augment_prob:
+        return feature_dict
+
+    if "xyz_37" not in feature_dict or "xyz_37_m" not in feature_dict:
+        return feature_dict
+
+    mask = feature_dict.get("mask", None)
+    chain_mask = feature_dict.get("chain_mask", None)
+    if mask is None or chain_mask is None:
+        return feature_dict
+
+    xyz_37 = feature_dict["xyz_37"]        # [L, 37, 3]
+    xyz_37_m = feature_dict["xyz_37_m"]    # [L, 37]
+    Y = feature_dict["Y"]                  # [N, 3]
+    Y_t = feature_dict["Y_t"]              # [N]
+    Y_m = feature_dict["Y_m"]              # [N]
+
+    valid_indices = torch.where((mask == 1) & (chain_mask == 1))[0]
+    if len(valid_indices) < 3:
+        return feature_dict
+
+    frac = random.uniform(min_frac, max_frac)
+    n_select = max(1, int(len(valid_indices) * frac))
+    perm = torch.randperm(len(valid_indices))[:n_select]
+    selected_indices = valid_indices[perm]
+
+    side_chain_atom_types = _SIDE_CHAIN_ATOM_TYPES.to(Y.device)
+
+    new_Y_list = []
+    new_Y_t_list = []
+    new_Y_m_list = []
+    for idx in selected_indices:
+        sc_coords = xyz_37[idx, 5:]       # [32, 3]
+        sc_mask = xyz_37_m[idx, 5:]        # [32]
+        valid_sc = sc_mask > 0
+        if valid_sc.sum() == 0:
+            continue
+        new_Y_list.append(sc_coords[valid_sc])
+        new_Y_t_list.append(side_chain_atom_types[valid_sc])
+        new_Y_m_list.append(torch.ones(int(valid_sc.sum()), dtype=Y_m.dtype, device=Y.device))
+
+    if len(new_Y_list) == 0:
+        return feature_dict
+
+    new_Y = torch.cat(new_Y_list, dim=0)
+    new_Y_t = torch.cat(new_Y_t_list, dim=0).to(Y_t.dtype)
+    new_Y_m = torch.cat(new_Y_m_list, dim=0)
+
+    feature_dict["Y"] = torch.cat([Y, new_Y], dim=0)
+    feature_dict["Y_t"] = torch.cat([Y_t, new_Y_t], dim=0)
+    feature_dict["Y_m"] = torch.cat([Y_m, new_Y_m], dim=0)
+
+    if "Y_chem" in feature_dict and feature_dict["Y_chem"] is not None:
+        Y_chem = feature_dict["Y_chem"]
+        new_Y_chem = torch.zeros(
+            new_Y.shape[0], Y_chem.shape[-1], dtype=Y_chem.dtype, device=Y_chem.device
+        )
+        feature_dict["Y_chem"] = torch.cat([Y_chem, new_Y_chem], dim=0)
+
+    chain_mask = chain_mask.clone()
+    chain_mask[selected_indices] = 0
+    feature_dict["chain_mask"] = chain_mask
+
+    return feature_dict
+
 def _length_filter(data_csv, min_res, max_res): #长度过滤
     return data_csv[
         (data_csv.seq_length >= min_res)
@@ -146,6 +239,9 @@ class BindingNetDataset(BaseDataset):
         )
         feature_dict["chain_mask"] = chain_mask
 
+        if self._is_training:
+            feature_dict = sidechain_augmentation(feature_dict)
+
         feature_dict = bindingnet_featurize(
                     feature_dict,
                     cutoff_for_score=6.0,
@@ -240,6 +336,9 @@ class MergeDataset(BaseDataset):
             #device=self.device,
         )
         feature_dict["chain_mask"] = chain_mask
+
+        if self._is_training:
+            feature_dict = sidechain_augmentation(feature_dict)
 
         feature_dict = bindingnet_featurize(
                     feature_dict,
@@ -342,6 +441,9 @@ class PDBDataset(BaseDataset):
             )
             feature_dict["chain_mask"] = chain_mask
 
+            if self._is_training:
+                feature_dict = sidechain_augmentation(feature_dict)
+
             feature_dict = bindingnet_featurize(
                         feature_dict,
                         cutoff_for_score=6.0,
@@ -368,6 +470,9 @@ class PDBDataset(BaseDataset):
             #     )
             # )
             # feature_dict["chain_mask"] = chain_mask
+
+        if self._is_training:
+            feature_dict = sidechain_augmentation(feature_dict)
 
         feature_dict = bindingnet_featurize(
                     feature_dict,

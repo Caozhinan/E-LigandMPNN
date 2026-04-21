@@ -53,7 +53,7 @@ class mpnnModule(LightningModule):
                 hidden_dim=128,
                 num_encoder_layers=3,
                 num_decoder_layers=3,
-                k_neighbors=48,
+                k_neighbors=32,
                 #augment_eps=self._exp_cfg.noise_level,
                 dropout=self._exp_cfg.dropout,
                 device=None,
