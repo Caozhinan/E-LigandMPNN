@@ -200,7 +200,7 @@ def load_model(ckpt_path: str, device: torch.device) -> ProteinMPNN:
         hidden_dim=128,
         num_encoder_layers=3,
         num_decoder_layers=3,
-        k_neighbors=48,
+        k_neighbors=32,
         dropout=0.0,
         device=None,
         atom_context_num=30,
