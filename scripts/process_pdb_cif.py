@@ -45,6 +45,15 @@ from rdkit import Chem, RDLogger
 from rdkit.Chem import rdDetermineBonds
 from tqdm import tqdm
 
+# Make the shared ``utils/structure/mol_features`` module importable
+# regardless of how this script is invoked (python scripts/... or
+# python -m scripts...).
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_UTILS_DIR = _REPO_ROOT / "utils"
+if str(_UTILS_DIR) not in sys.path:
+    sys.path.insert(0, str(_UTILS_DIR))
+from structure.mol_features import compute_atom_features_from_coords  # noqa: E402
+
 # Suppress noisy RDKit warnings
 RDLogger.logger().setLevel(RDLogger.ERROR)
 
@@ -771,348 +780,126 @@ def deduplicate_homologous_chains(
 # Step 4a: Ligand extraction
 # =====================================================================
 
-def _perceive_mol_properties(mol) -> None:
-    """Perceive hybridization, aromaticity and ring membership on an RWMol
-    that was populated from 3D coords + inferred bonds.
+def _iter_hetatm_sites(mmcif_dict: dict, blacklist: set):
+    """Yield ``(resname, elem, (x, y, z), residue_key)`` tuples for every
+    non-blacklisted HETATM atom in ``mmcif_dict``.
 
-    ``UpdatePropertyCache(strict=False)`` alone leaves hybridization as
-    ``UNSPECIFIED``; a full ``SanitizeMol`` pass is required to populate
-    the attributes consumed by ``_compute_atom_features_from_mol``.
-    Charged ligands (phosphates, sulfonates, …) can trip default
-    sanitization, so we progressively fall back to more lenient flag
-    sets and finally to a best-effort perception pass.
+    ``residue_key`` uniquely identifies a single ligand residue instance
+    via ``(auth_asym_id, auth_seq_id, ins_code, comp_id)``.  This lets
+    downstream code process HETATMs one residue at a time, which makes
+    RDKit's ``rdDetermineBonds`` substantially more reliable than
+    running it on a lumped-together RWMol.
     """
-    try:
-        mol.UpdatePropertyCache(strict=False)
-    except Exception:
-        pass
+    group_pdb = mmcif_dict.get("_atom_site.group_PDB", [])
+    comp_ids = mmcif_dict.get("_atom_site.auth_comp_id",
+                              mmcif_dict.get("_atom_site.label_comp_id", []))
+    elements = mmcif_dict.get("_atom_site.type_symbol", [])
+    x_coords = mmcif_dict.get("_atom_site.Cartn_x", [])
+    y_coords = mmcif_dict.get("_atom_site.Cartn_y", [])
+    z_coords = mmcif_dict.get("_atom_site.Cartn_z", [])
+    auth_asym = mmcif_dict.get("_atom_site.auth_asym_id",
+                               mmcif_dict.get("_atom_site.label_asym_id", []))
+    auth_seq = mmcif_dict.get("_atom_site.auth_seq_id",
+                              mmcif_dict.get("_atom_site.label_seq_id", []))
+    ins_codes = mmcif_dict.get("_atom_site.pdbx_PDB_ins_code", [])
 
-    # 1) Try default sanitization (gives hybridization + aromaticity +
-    #    rings + valence).
-    try:
-        Chem.SanitizeMol(mol)
-        return
-    except Exception:
-        pass
+    if isinstance(group_pdb, str):
+        group_pdb = [group_pdb]
+    if isinstance(comp_ids, str):
+        comp_ids = [comp_ids]
 
-    # 2) Lenient: skip kekulization / strict valence checks, which are
-    #    the usual culprits for ionized ligands with only connectivity
-    #    information (no bond orders).
-    try:
-        lenient_ops = (
-            Chem.SanitizeFlags.SANITIZE_ALL
-            ^ Chem.SanitizeFlags.SANITIZE_KEKULIZE
-            ^ Chem.SanitizeFlags.SANITIZE_PROPERTIES
-            ^ Chem.SanitizeFlags.SANITIZE_SETAROMATICITY
-        )
-        Chem.SanitizeMol(mol, sanitizeOps=lenient_ops)
-        return
-    except Exception:
-        pass
+    n_rows = len(group_pdb)
+    for i in range(n_rows):
+        if group_pdb[i] != "HETATM":
+            continue
 
-    # 3) Last resort: at least perceive rings and hybridization directly.
-    try:
-        Chem.GetSSSR(mol)
-    except Exception:
-        pass
-    try:
-        Chem.rdMolDescriptors.CalcNumRings(mol)
-    except Exception:
-        pass
-    try:
-        Chem.AssignStereochemistryFrom3D(mol)
-    except Exception:
-        pass
-    try:
-        # Manually trigger hybridization perception via setAromaticity, which
-        # internally calls setHybridization.
-        from rdkit.Chem import rdmolops
-        rdmolops.SetAromaticity(mol)
-    except Exception:
-        pass
+        resname = comp_ids[i].strip().upper()
+        if resname in blacklist:
+            continue
+        if resname in NUCLEIC_ACID_RESIDUES:
+            continue
 
+        elem = elements[i].strip().upper() if i < len(elements) else ""
+        if elem in ("H", "D"):  # skip hydrogens / deuterium
+            continue
 
-def _compute_atom_features_from_mol(mol) -> np.ndarray:
-    """Compute 12-dim chemical features for each atom in an RDKit mol.
-    Matches Molecule._compute_atom_features()."""
-    features = []
-    hybridization_map = {
-        Chem.rdchem.HybridizationType.SP: 0,
-        Chem.rdchem.HybridizationType.SP2: 1,
-        Chem.rdchem.HybridizationType.SP3: 2,
-        Chem.rdchem.HybridizationType.SP3D: 3,
-        Chem.rdchem.HybridizationType.SP3D2: 4,
-    }
-
-    for atom in mol.GetAtoms():
         try:
-            # Hybridization one-hot (6 dims)
-            hyb = hybridization_map.get(atom.GetHybridization(), 5)
-            hyb_onehot = np.zeros(6, dtype=np.float32)
-            hyb_onehot[hyb] = 1.0
+            x = float(x_coords[i])
+            y = float(y_coords[i])
+            z = float(z_coords[i])
+        except (ValueError, IndexError):
+            continue
 
-            formal_charge = np.clip(atom.GetFormalCharge() / 2.0, -1.0, 1.0)
-            is_aromatic = float(atom.GetIsAromatic())
-            is_in_ring = float(atom.IsInRing())
+        asym = auth_asym[i] if i < len(auth_asym) else ""
+        seq = auth_seq[i] if i < len(auth_seq) else ""
+        ins = ins_codes[i] if i < len(ins_codes) else ""
+        residue_key = (str(asym), str(seq), str(ins), resname)
 
-            symbol = atom.GetSymbol()
-            num_hs = atom.GetTotalNumHs()
-            is_hbd = 0.0
-            if symbol in ("N", "O", "S") and num_hs > 0:
-                is_hbd = 1.0
-            elif symbol == "N" and atom.GetFormalCharge() > 0:
-                is_hbd = 1.0
+        yield resname, elem, (x, y, z), residue_key
 
-            is_hba = 0.0
-            if atom.GetFormalCharge() <= 0:
-                if symbol == "O":
-                    is_hba = 1.0
-                elif symbol == "N":
-                    degree = atom.GetDegree()
-                    hyb_type = atom.GetHybridization()
-                    if hyb_type == Chem.rdchem.HybridizationType.SP3 and degree < 4:
-                        is_hba = 1.0
-                    elif hyb_type == Chem.rdchem.HybridizationType.SP2 and degree < 3:
-                        is_hba = 1.0
-                    elif hyb_type == Chem.rdchem.HybridizationType.SP and degree < 2:
-                        is_hba = 1.0
-                elif symbol == "S":
-                    if atom.GetDegree() <= 2 and not atom.GetIsAromatic():
-                        is_hba = 0.5
-                elif symbol == "F":
-                    is_hba = 0.3
 
-            degree_norm = atom.GetDegree() / 5.0
+def _extract_ligand_atoms_from_mmcif(mmcif_dict: dict, blacklist: set = None):
+    """Extract non-blacklisted HETATM atoms and compute per-residue
+    ``atom_features``.
 
-            feat = np.concatenate([
-                hyb_onehot,
-                [formal_charge, is_aromatic, is_in_ring,
-                 is_hbd, is_hba, degree_norm]
-            ]).astype(np.float32)
-            features.append(feat)
-        except Exception:
-            features.append(np.zeros(12, dtype=np.float32))
+    Returns ``(atom_list, atom_coordinate, atom_features)`` where
+    ``atom_features`` is a ``[N, 12]`` ``np.ndarray`` (never ``None``;
+    atoms in residues where RDKit perception fails get zero features
+    rather than dropping the whole ligand).
+    """
+    if blacklist is None:
+        blacklist = ARTIFACT_CCD_IDS
 
-    if features:
-        return np.array(features, dtype=np.float32)
-    return np.zeros((0, 12), dtype=np.float32)
+    all_atom_symbols: list[str] = []
+    all_atom_coords: list[list[float]] = []
+    residue_boundaries: list[tuple[int, int]] = []
+
+    current_key = None
+    current_start = 0
+
+    for _resname, elem, coord, residue_key in _iter_hetatm_sites(mmcif_dict, blacklist):
+        if residue_key != current_key:
+            if current_key is not None:
+                residue_boundaries.append((current_start, len(all_atom_symbols)))
+            current_key = residue_key
+            current_start = len(all_atom_symbols)
+        all_atom_symbols.append(elem)
+        all_atom_coords.append([coord[0], coord[1], coord[2]])
+
+    if current_key is not None:
+        residue_boundaries.append((current_start, len(all_atom_symbols)))
+
+    if not all_atom_symbols:
+        return [], np.zeros((0, 3), dtype=np.float32), None
+
+    atom_coordinate = np.asarray(all_atom_coords, dtype=np.float32)
+
+    try:
+        atom_features = compute_atom_features_from_coords(
+            all_atom_symbols, atom_coordinate, residue_boundaries=residue_boundaries,
+        )
+    except Exception:
+        atom_features = None
+
+    return all_atom_symbols, atom_coordinate, atom_features
 
 
 def extract_ligands_from_cif(cif_path: str, blacklist: set = None):
-    """Extract non-blacklisted HETATM ligand atoms from CIF.
+    """Extract non-blacklisted HETATM ligand atoms from a CIF file.
 
-    Returns (atom_list, atom_coordinate, atom_features) where:
-      - atom_list: list of element symbols
-      - atom_coordinate: np.ndarray of shape (N, 3)
-      - atom_features: np.ndarray of shape (N, 12) or None
+    See :func:`_extract_ligand_atoms_from_mmcif` for the return format.
+    Bond perception is performed per ligand residue with a charge sweep
+    so ionized ligands (phosphates, heme, …) still get correct
+    hybridization / aromaticity / ring / degree entries.
     """
-    if blacklist is None:
-        blacklist = ARTIFACT_CCD_IDS
-
     mmcif_dict = MMCIF2Dict(cif_path)
-
-    # Get atom_site data
-    group_pdb = mmcif_dict.get("_atom_site.group_PDB", [])
-    comp_ids = mmcif_dict.get("_atom_site.auth_comp_id",
-                              mmcif_dict.get("_atom_site.label_comp_id", []))
-    elements = mmcif_dict.get("_atom_site.type_symbol", [])
-    x_coords = mmcif_dict.get("_atom_site.Cartn_x", [])
-    y_coords = mmcif_dict.get("_atom_site.Cartn_y", [])
-    z_coords = mmcif_dict.get("_atom_site.Cartn_z", [])
-
-    if isinstance(group_pdb, str):
-        group_pdb = [group_pdb]
-    if isinstance(comp_ids, str):
-        comp_ids = [comp_ids]
-
-    all_atom_symbols = []
-    all_atom_coords = []
-    all_resname_groups = defaultdict(lambda: {"symbols": [], "coords": []})
-
-    for i in range(len(group_pdb)):
-        if group_pdb[i] != "HETATM":
-            continue
-
-        resname = comp_ids[i].strip().upper()
-        if resname in blacklist:
-            continue
-        if resname in NUCLEIC_ACID_RESIDUES:
-            continue
-
-        elem = elements[i].strip().upper() if i < len(elements) else ""
-        if elem == "H" or elem == "D":  # Skip hydrogens
-            continue
-
-        try:
-            x = float(x_coords[i])
-            y = float(y_coords[i])
-            z = float(z_coords[i])
-        except (ValueError, IndexError):
-            continue
-
-        all_atom_symbols.append(elem)
-        all_atom_coords.append([x, y, z])
-        all_resname_groups[resname]["symbols"].append(elem)
-        all_resname_groups[resname]["coords"].append([x, y, z])
-
-    if not all_atom_symbols:
-        return [], np.zeros((0, 3), dtype=np.float32), None
-
-    atom_coordinate = np.array(all_atom_coords, dtype=np.float32)
-
-    # Try to build RDKit mol for feature computation
-    atom_features = None
-    try:
-        from rdkit.Geometry import Point3D
-        mol = Chem.RWMol()
-        for sym in all_atom_symbols:
-            # RDKit expects proper capitalization (e.g., "Fe" not "FE")
-            sym_proper = sym.capitalize() if len(sym) > 1 else sym
-            atom = Chem.Atom(sym_proper)
-            mol.AddAtom(atom)
-        conf = Chem.Conformer(len(all_atom_symbols))
-        for i, coord in enumerate(all_atom_coords):
-            conf.SetAtomPosition(i, Point3D(*coord))
-        mol.AddConformer(conf)
-
-        # Infer bond connectivity and bond orders from 3D coordinates.
-        # Without this, the RWMol has no bonds and downstream feature
-        # computation sees every atom as isolated (hybridization falls
-        # back to "unknown", no aromaticity, no ring membership, zero
-        # degree).
-        try:
-            rdDetermineBonds.DetermineConnectivity(mol)
-            rdDetermineBonds.DetermineBondOrders(mol)
-        except Exception:
-            try:
-                mol2 = Chem.RWMol()
-                for sym in all_atom_symbols:
-                    sym_proper = sym.capitalize() if len(sym) > 1 else sym
-                    mol2.AddAtom(Chem.Atom(sym_proper))
-                conf2 = Chem.Conformer(len(all_atom_symbols))
-                for i, coord in enumerate(all_atom_coords):
-                    conf2.SetAtomPosition(i, Point3D(*coord))
-                mol2.AddConformer(conf2)
-                rdDetermineBonds.DetermineConnectivity(mol2)
-                mol = mol2
-            except Exception:
-                pass
-
-        _perceive_mol_properties(mol)
-        atom_features = _compute_atom_features_from_mol(mol)
-    except Exception:
-        atom_features = None
-
-    return all_atom_symbols, atom_coordinate, atom_features
+    return _extract_ligand_atoms_from_mmcif(mmcif_dict, blacklist=blacklist)
 
 
 def extract_ligands_from_mmcif_dict(mmcif_dict: dict, blacklist: set = None):
-    """Extract non-blacklisted HETATM ligand atoms from a pre-parsed mmcif_dict.
-
-    Same logic as extract_ligands_from_cif but accepts an already-parsed
-    MMCIF2Dict object, avoiding re-reading the CIF file.
-
-    Returns (atom_list, atom_coordinate, atom_features) where:
-      - atom_list: list of element symbols
-      - atom_coordinate: np.ndarray of shape (N, 3)
-      - atom_features: np.ndarray of shape (N, 12) or None
-    """
-    if blacklist is None:
-        blacklist = ARTIFACT_CCD_IDS
-
-    # Get atom_site data
-    group_pdb = mmcif_dict.get("_atom_site.group_PDB", [])
-    comp_ids = mmcif_dict.get("_atom_site.auth_comp_id",
-                              mmcif_dict.get("_atom_site.label_comp_id", []))
-    elements = mmcif_dict.get("_atom_site.type_symbol", [])
-    x_coords = mmcif_dict.get("_atom_site.Cartn_x", [])
-    y_coords = mmcif_dict.get("_atom_site.Cartn_y", [])
-    z_coords = mmcif_dict.get("_atom_site.Cartn_z", [])
-
-    if isinstance(group_pdb, str):
-        group_pdb = [group_pdb]
-    if isinstance(comp_ids, str):
-        comp_ids = [comp_ids]
-
-    all_atom_symbols = []
-    all_atom_coords = []
-    all_resname_groups = defaultdict(lambda: {"symbols": [], "coords": []})
-
-    for i in range(len(group_pdb)):
-        if group_pdb[i] != "HETATM":
-            continue
-
-        resname = comp_ids[i].strip().upper()
-        if resname in blacklist:
-            continue
-        if resname in NUCLEIC_ACID_RESIDUES:
-            continue
-
-        elem = elements[i].strip().upper() if i < len(elements) else ""
-        if elem == "H" or elem == "D":  # Skip hydrogens
-            continue
-
-        try:
-            x = float(x_coords[i])
-            y = float(y_coords[i])
-            z = float(z_coords[i])
-        except (ValueError, IndexError):
-            continue
-
-        all_atom_symbols.append(elem)
-        all_atom_coords.append([x, y, z])
-        all_resname_groups[resname]["symbols"].append(elem)
-        all_resname_groups[resname]["coords"].append([x, y, z])
-
-    if not all_atom_symbols:
-        return [], np.zeros((0, 3), dtype=np.float32), None
-
-    atom_coordinate = np.array(all_atom_coords, dtype=np.float32)
-
-    # Try to build RDKit mol for feature computation
-    atom_features = None
-    try:
-        from rdkit.Geometry import Point3D
-        mol = Chem.RWMol()
-        for sym in all_atom_symbols:
-            # RDKit expects proper capitalization (e.g., "Fe" not "FE")
-            sym_proper = sym.capitalize() if len(sym) > 1 else sym
-            atom = Chem.Atom(sym_proper)
-            mol.AddAtom(atom)
-        conf = Chem.Conformer(len(all_atom_symbols))
-        for i, coord in enumerate(all_atom_coords):
-            conf.SetAtomPosition(i, Point3D(*coord))
-        mol.AddConformer(conf)
-
-        # Infer bond connectivity and bond orders from 3D coordinates.
-        # Without this, the RWMol has no bonds and downstream feature
-        # computation sees every atom as isolated (hybridization falls
-        # back to "unknown", no aromaticity, no ring membership, zero
-        # degree).
-        try:
-            rdDetermineBonds.DetermineConnectivity(mol)
-            rdDetermineBonds.DetermineBondOrders(mol)
-        except Exception:
-            try:
-                mol2 = Chem.RWMol()
-                for sym in all_atom_symbols:
-                    sym_proper = sym.capitalize() if len(sym) > 1 else sym
-                    mol2.AddAtom(Chem.Atom(sym_proper))
-                conf2 = Chem.Conformer(len(all_atom_symbols))
-                for i, coord in enumerate(all_atom_coords):
-                    conf2.SetAtomPosition(i, Point3D(*coord))
-                mol2.AddConformer(conf2)
-                rdDetermineBonds.DetermineConnectivity(mol2)
-                mol = mol2
-            except Exception:
-                pass
-
-        _perceive_mol_properties(mol)
-        atom_features = _compute_atom_features_from_mol(mol)
-    except Exception:
-        atom_features = None
-
-    return all_atom_symbols, atom_coordinate, atom_features
+    """Same as :func:`extract_ligands_from_cif` but accepts an already
+    parsed :class:`MMCIF2Dict` (avoids re-reading the CIF file)."""
+    return _extract_ligand_atoms_from_mmcif(mmcif_dict, blacklist=blacklist)
 
 
 # =====================================================================
