@@ -231,6 +231,7 @@ def process_single_cif(
     num_samples: int,
     omit_aa: list[str] | None,
     bias_dict: dict[str, float] | None,
+    sdf_dir: str | None = None,
 ) -> dict | None:
     """Process one CIF file and return design results.
 
@@ -253,26 +254,45 @@ def process_single_cif(
         return None
 
     # --- (b) Extract ligand atoms ---
-    try:
-        atom_list, atom_coord, atom_features = extract_ligands_from_cif(cif_path)
-    except Exception as e:
-        print(f"    [WARNING] Ligand extraction failed ({e}), using empty ligand.")
-        atom_list, atom_coord, atom_features = [], np.zeros((0, 3), dtype=np.float32), None
+    # Prefer an SDF file (with explicit bonds) when available: it gives
+    # the most accurate chemical features. Fall back to extracting
+    # HETATMs from the CIF, which now uses rdDetermineBonds to infer
+    # connectivity from 3D coordinates.
+    mol = None
+    sdf_loaded = False
 
-    # Build Molecule
-    if len(atom_list) > 0:
-        mol = Molecule(
-            atom_list=atom_list,
-            atom_coordinate=atom_coord,
-            atom_features=atom_features,
-        )
-    else:
-        # No ligand — use empty placeholder
-        mol = Molecule(
-            atom_list=[],
-            atom_coordinate=np.zeros((0, 3), dtype=np.float32),
-            atom_features=None,
-        )
+    if sdf_dir is not None:
+        stem = Path(cif_path).stem
+        for sdf_name in [f"{stem}.sdf", f"{stem}_ligand.sdf", f"{stem.lower()}.sdf"]:
+            sdf_path = Path(sdf_dir) / sdf_name
+            if sdf_path.is_file():
+                try:
+                    mol = Molecule.from_sdf(str(sdf_path), keep_hydrogens=False)
+                    sdf_loaded = True
+                    print(f"    [INFO] Loaded ligand from SDF: {sdf_path.name}")
+                    break
+                except Exception as e:
+                    print(f"    [WARNING] Failed to load SDF {sdf_path.name}: {e}")
+
+    if not sdf_loaded:
+        try:
+            atom_list, atom_coord, atom_features = extract_ligands_from_cif(cif_path)
+        except Exception as e:
+            print(f"    [WARNING] Ligand extraction failed ({e}), using empty ligand.")
+            atom_list, atom_coord, atom_features = [], np.zeros((0, 3), dtype=np.float32), None
+        if len(atom_list) > 0:
+            mol = Molecule(
+                atom_list=atom_list,
+                atom_coordinate=atom_coord,
+                atom_features=atom_features,
+            )
+        else:
+            # No ligand — use empty placeholder
+            mol = Molecule(
+                atom_list=[],
+                atom_coordinate=np.zeros((0, 3), dtype=np.float32),
+                atom_features=None,
+            )
 
     # --- (c) Build ProteinLigandComplex ---
     plc = ProteinLigandComplex(protein=protein_chains, molecule=mol)
@@ -358,7 +378,7 @@ def process_single_cif(
         mean_lp = (per_res_lp * mask).sum().item() / max(n_valid, 1.0)
         mean_log_probs.append(mean_lp)
 
-    n_ligand_atoms = len(atom_list)
+    n_ligand_atoms = len(mol.atom_list)
     print(
         f"    Chains={len(protein_chains)}, Residues={L}, "
         f"LigandAtoms={n_ligand_atoms}, "
@@ -423,6 +443,10 @@ def main():
                         help="Amino acids to omit, e.g. --omit_AA CYS MET")
     parser.add_argument("--bias", nargs="+", default=None,
                         help="Per-AA bias, e.g. --bias ALA:-0.5 PRO:1.0")
+    parser.add_argument("--sdf_dir", type=str, default=None,
+                        help="Optional directory containing SDF files for ligands. "
+                             "If an SDF file matching the CIF stem is found, "
+                             "it will be used for more accurate ligand chemical features.")
 
     args = parser.parse_args()
 
@@ -457,6 +481,7 @@ def main():
             num_samples=args.num_samples,
             omit_aa=args.omit_AA,
             bias_dict=bias_dict,
+            sdf_dir=args.sdf_dir,
         )
         if result is None:
             continue
