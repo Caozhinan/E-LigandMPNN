@@ -42,6 +42,7 @@ from Bio.Data import PDBData
 from Bio.PDB import MMCIFParser
 from Bio.PDB.MMCIF2Dict import MMCIF2Dict
 from rdkit import Chem, RDLogger
+from rdkit.Chem import rdDetermineBonds
 from tqdm import tqdm
 
 # Suppress noisy RDKit warnings
@@ -770,6 +771,67 @@ def deduplicate_homologous_chains(
 # Step 4a: Ligand extraction
 # =====================================================================
 
+def _perceive_mol_properties(mol) -> None:
+    """Perceive hybridization, aromaticity and ring membership on an RWMol
+    that was populated from 3D coords + inferred bonds.
+
+    ``UpdatePropertyCache(strict=False)`` alone leaves hybridization as
+    ``UNSPECIFIED``; a full ``SanitizeMol`` pass is required to populate
+    the attributes consumed by ``_compute_atom_features_from_mol``.
+    Charged ligands (phosphates, sulfonates, …) can trip default
+    sanitization, so we progressively fall back to more lenient flag
+    sets and finally to a best-effort perception pass.
+    """
+    try:
+        mol.UpdatePropertyCache(strict=False)
+    except Exception:
+        pass
+
+    # 1) Try default sanitization (gives hybridization + aromaticity +
+    #    rings + valence).
+    try:
+        Chem.SanitizeMol(mol)
+        return
+    except Exception:
+        pass
+
+    # 2) Lenient: skip kekulization / strict valence checks, which are
+    #    the usual culprits for ionized ligands with only connectivity
+    #    information (no bond orders).
+    try:
+        lenient_ops = (
+            Chem.SanitizeFlags.SANITIZE_ALL
+            ^ Chem.SanitizeFlags.SANITIZE_KEKULIZE
+            ^ Chem.SanitizeFlags.SANITIZE_PROPERTIES
+            ^ Chem.SanitizeFlags.SANITIZE_SETAROMATICITY
+        )
+        Chem.SanitizeMol(mol, sanitizeOps=lenient_ops)
+        return
+    except Exception:
+        pass
+
+    # 3) Last resort: at least perceive rings and hybridization directly.
+    try:
+        Chem.GetSSSR(mol)
+    except Exception:
+        pass
+    try:
+        Chem.rdMolDescriptors.CalcNumRings(mol)
+    except Exception:
+        pass
+    try:
+        Chem.AssignStereochemistryFrom3D(mol)
+    except Exception:
+        pass
+    try:
+        # Manually trigger hybridization perception via setAromaticity, which
+        # internally calls setHybridization.
+        from rdkit.Chem import rdmolops
+        rdmolops.SetAromaticity(mol)
+    except Exception:
+        pass
+
+
 def _compute_atom_features_from_mol(mol) -> np.ndarray:
     """Compute 12-dim chemical features for each atom in an RDKit mol.
     Matches Molecule._compute_atom_features()."""
@@ -912,11 +974,31 @@ def extract_ligands_from_cif(cif_path: str, blacklist: set = None):
         for i, coord in enumerate(all_atom_coords):
             conf.SetAtomPosition(i, Point3D(*coord))
         mol.AddConformer(conf)
-        # Compute implicit valence to avoid RDKit warnings
+
+        # Infer bond connectivity and bond orders from 3D coordinates.
+        # Without this, the RWMol has no bonds and downstream feature
+        # computation sees every atom as isolated (hybridization falls
+        # back to "unknown", no aromaticity, no ring membership, zero
+        # degree).
         try:
-            mol.UpdatePropertyCache(strict=False)
+            rdDetermineBonds.DetermineConnectivity(mol)
+            rdDetermineBonds.DetermineBondOrders(mol)
         except Exception:
-            pass
+            try:
+                mol2 = Chem.RWMol()
+                for sym in all_atom_symbols:
+                    sym_proper = sym.capitalize() if len(sym) > 1 else sym
+                    mol2.AddAtom(Chem.Atom(sym_proper))
+                conf2 = Chem.Conformer(len(all_atom_symbols))
+                for i, coord in enumerate(all_atom_coords):
+                    conf2.SetAtomPosition(i, Point3D(*coord))
+                mol2.AddConformer(conf2)
+                rdDetermineBonds.DetermineConnectivity(mol2)
+                mol = mol2
+            except Exception:
+                pass
+
+        _perceive_mol_properties(mol)
         atom_features = _compute_atom_features_from_mol(mol)
     except Exception:
         atom_features = None
@@ -1001,11 +1083,31 @@ def extract_ligands_from_mmcif_dict(mmcif_dict: dict, blacklist: set = None):
         for i, coord in enumerate(all_atom_coords):
             conf.SetAtomPosition(i, Point3D(*coord))
         mol.AddConformer(conf)
-        # Compute implicit valence to avoid RDKit warnings
+
+        # Infer bond connectivity and bond orders from 3D coordinates.
+        # Without this, the RWMol has no bonds and downstream feature
+        # computation sees every atom as isolated (hybridization falls
+        # back to "unknown", no aromaticity, no ring membership, zero
+        # degree).
         try:
-            mol.UpdatePropertyCache(strict=False)
+            rdDetermineBonds.DetermineConnectivity(mol)
+            rdDetermineBonds.DetermineBondOrders(mol)
         except Exception:
-            pass
+            try:
+                mol2 = Chem.RWMol()
+                for sym in all_atom_symbols:
+                    sym_proper = sym.capitalize() if len(sym) > 1 else sym
+                    mol2.AddAtom(Chem.Atom(sym_proper))
+                conf2 = Chem.Conformer(len(all_atom_symbols))
+                for i, coord in enumerate(all_atom_coords):
+                    conf2.SetAtomPosition(i, Point3D(*coord))
+                mol2.AddConformer(conf2)
+                rdDetermineBonds.DetermineConnectivity(mol2)
+                mol = mol2
+            except Exception:
+                pass
+
+        _perceive_mol_properties(mol)
         atom_features = _compute_atom_features_from_mol(mol)
     except Exception:
         atom_features = None
