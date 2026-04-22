@@ -158,71 +158,15 @@ def parse_pdb_all_chains(pdb_path: str) -> list:
 # SDF Parsing — reimplements Molecule.from_sdf + SMILES extraction  
 # =====================================================================  
   
-def _compute_atom_features_from_mol(mol) -> np.ndarray:
-    """Compute 12-dim chemical features for each atom in an RDKit mol.
-    Matches Molecule._compute_atom_features() in protein_chain_241203.py
-    and _compute_atom_features_from_mol() in process_pdb_cif.py."""
-    features = []
-    hybridization_map = {
-        Chem.rdchem.HybridizationType.SP: 0,
-        Chem.rdchem.HybridizationType.SP2: 1,
-        Chem.rdchem.HybridizationType.SP3: 2,
-        Chem.rdchem.HybridizationType.SP3D: 3,
-        Chem.rdchem.HybridizationType.SP3D2: 4,
-    }
-
-    for atom in mol.GetAtoms():
-        try:
-            # Hybridization one-hot (6 dims)
-            hyb = hybridization_map.get(atom.GetHybridization(), 5)
-            hyb_onehot = np.zeros(6, dtype=np.float32)
-            hyb_onehot[hyb] = 1.0
-
-            formal_charge = np.clip(atom.GetFormalCharge() / 2.0, -1.0, 1.0)
-            is_aromatic = float(atom.GetIsAromatic())
-            is_in_ring = float(atom.IsInRing())
-
-            symbol = atom.GetSymbol()
-            num_hs = atom.GetTotalNumHs()
-            is_hbd = 0.0
-            if symbol in ("N", "O", "S") and num_hs > 0:
-                is_hbd = 1.0
-            elif symbol == "N" and atom.GetFormalCharge() > 0:
-                is_hbd = 1.0
-
-            is_hba = 0.0
-            if atom.GetFormalCharge() <= 0:
-                if symbol == "O":
-                    is_hba = 1.0
-                elif symbol == "N":
-                    degree = atom.GetDegree()
-                    hyb_type = atom.GetHybridization()
-                    if hyb_type == Chem.rdchem.HybridizationType.SP3 and degree < 4:
-                        is_hba = 1.0
-                    elif hyb_type == Chem.rdchem.HybridizationType.SP2 and degree < 3:
-                        is_hba = 1.0
-                    elif hyb_type == Chem.rdchem.HybridizationType.SP and degree < 2:
-                        is_hba = 1.0
-                elif symbol == "S":
-                    if atom.GetDegree() <= 2 and not atom.GetIsAromatic():
-                        is_hba = 0.5
-                elif symbol == "F":
-                    is_hba = 0.3
-
-            degree_norm = atom.GetDegree() / 5.0
-
-            feat = np.concatenate([
-                hyb_onehot,
-                [formal_charge, is_aromatic, is_in_ring,
-                 is_hbd, is_hba, degree_norm]
-            ]).astype(np.float32)
-            features.append(feat)
-        except Exception:
-            features.append(np.zeros(12, dtype=np.float32))
-
-    if features:
-        return np.array(features, dtype=np.float32)
-    return np.zeros((0, 12), dtype=np.float32)
+# Share the 12-D ligand feature computation with ``process_pdb_cif`` /
+# ``Molecule.from_sdf`` so that blobs generated from BindingNetv2 SDFs
+# are bit-for-bit compatible with blobs generated from PDB CIFs when
+# ``parse_PDB_from_PDB_complex`` reads ``Y_chem`` back.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_UTILS_DIR = _REPO_ROOT / "utils"
+if str(_UTILS_DIR) not in sys.path:
+    sys.path.insert(0, str(_UTILS_DIR))
+from structure.mol_features import compute_atom_features_from_mol as _compute_atom_features_from_mol  # noqa: E402
 
 
 def parse_sdf(sdf_path: str) -> tuple:
