@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-r"""
+"""
 batch_predict.py — 从 FASTA 文件批量生成 AF3 蛋白-小分子复合物预测结构（多卡并行版）。
 conda activate /public/home/lujianzhang/miniconda3/envs/af3_mmseqs
 
