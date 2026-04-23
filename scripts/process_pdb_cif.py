@@ -1118,6 +1118,72 @@ def process_single_cif(
 # Step 5-7: Batch processing, clustering, splitting
 # =====================================================================
 
+def _blob_path_for_meta(meta: dict, output_dir: str) -> str:
+    """Compute the blob output path that `process_single_cif` would write for this meta."""
+    pdb_id = meta["pdb_id"]
+    assembly_num = meta["assembly_num"]
+    return os.path.join(output_dir, pdb_id, f"{pdb_id}_assembly{assembly_num}.blob")
+
+
+def _csv_row_from_existing_blob(meta: dict, blob_path: str) -> dict | None:
+    """Rebuild the CSV row for a CIF whose blob already exists on disk.
+
+    Avoids re-running the (expensive) TMalign dedup + ligand extraction when
+    the output blob is already present. Returns None if the blob is corrupt
+    or empty so the caller can fall back to a full re-run.
+    """
+    try:
+        state = load_blob(blob_path)
+    except Exception as e:
+        logger.warning(f"Existing blob unreadable, will re-process: {blob_path} ({e})")
+        return None
+
+    proteins = state.get("protein", []) or []
+    if not proteins:
+        # Empty / invalid blob — pretend it doesn't exist so the full pipeline reruns.
+        return None
+
+    def _seq_len(chain: dict) -> int:
+        seq = chain.get("sequence", "")
+        if isinstance(seq, bytes):
+            seq = seq.decode("utf-8", errors="ignore")
+        return len(seq)
+
+    num_chains = len(proteins)
+    seq_length = sum(_seq_len(c) for c in proteins)
+    ligand = state.get("ligand", {}) or {}
+    atom_list = ligand.get("atom_list", []) or []
+    num_ligand_atoms = len(atom_list)
+
+    has_ligands = num_ligand_atoms > 0
+    has_nucleic = meta.get("num_nucleic_chains", 0) > 0
+    is_multi_chain = num_chains > 1
+
+    if has_nucleic:
+        complex_type = "protein_nucleic_acid"
+    elif has_ligands:
+        complex_type = "protein_ligand"
+    elif is_multi_chain:
+        complex_type = "protein_protein"
+    else:
+        complex_type = "monomer"
+
+    return {
+        "blob_path": blob_path,
+        "source": "pdb",
+        "chain_idx": str(list(range(num_chains))),
+        "seq_length": seq_length,
+        "complex_type": complex_type,
+        "pdb_id": meta["pdb_id"],
+        "assembly_num": meta["assembly_num"],
+        "resolution": meta["resolution"],
+        "num_chains": num_chains,
+        "exp_method": meta["exp_method"],
+        "num_ligand_atoms": num_ligand_atoms,
+        "num_nucleic_chains": meta["num_nucleic_chains"],
+    }
+
+
 def process_all_cifs(
     cif_paths: list,
     output_dir: str,
@@ -1129,6 +1195,7 @@ def process_all_cifs(
     num_workers: int = 4,
     skip_quality_filter: bool = False,
     resume: bool = False,
+    skip_existing: bool = False,
 ) -> pd.DataFrame:
     """Process all CIF files: extract metadata, filter, process, generate CSV."""
 
@@ -1185,33 +1252,56 @@ def process_all_cifs(
     results = []
     failed_entries = []
 
-    with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        futures = {
-            executor.submit(
-                process_single_cif, meta, output_dir,
-                tmalign_bin, tmscore_threshold
-            ): meta
-            for meta in filtered
-        }
-        for future in tqdm(as_completed(futures), total=len(futures),
-                           desc="Processing CIFs"):
-            meta = futures[future]
-            try:
-                result = future.result()
-                if result is not None:
-                    results.append(result)
-                else:
+    # Partition into (already-written blobs -> reconstruct CSV row) vs (need processing).
+    to_process: list = []
+    if skip_existing:
+        logger.info("  --skip_existing: scanning output dir for existing blobs...")
+        skipped = 0
+        for meta in tqdm(filtered, desc="Scan existing blobs"):
+            blob_path = _blob_path_for_meta(meta, output_dir)
+            if os.path.isfile(blob_path):
+                row = _csv_row_from_existing_blob(meta, blob_path)
+                if row is not None:
+                    results.append(row)
+                    skipped += 1
+                    continue
+                # Corrupt / empty blob -> fall through to reprocess.
+            to_process.append(meta)
+        logger.info(
+            f"  Skipped {skipped} entries with existing blobs; "
+            f"{len(to_process)} remaining to process."
+        )
+    else:
+        to_process = list(filtered)
+
+    if to_process:
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            futures = {
+                executor.submit(
+                    process_single_cif, meta, output_dir,
+                    tmalign_bin, tmscore_threshold
+                ): meta
+                for meta in to_process
+            }
+            for future in tqdm(as_completed(futures), total=len(futures),
+                               desc="Processing CIFs"):
+                meta = futures[future]
+                try:
+                    result = future.result()
+                    if result is not None:
+                        results.append(result)
+                    else:
+                        failed_entries.append({
+                            "cif_path": meta["cif_path"],
+                            "pdb_id": meta["pdb_id"],
+                            "error": "process_single_cif returned None"
+                        })
+                except Exception as e:
                     failed_entries.append({
                         "cif_path": meta["cif_path"],
                         "pdb_id": meta["pdb_id"],
-                        "error": "process_single_cif returned None"
+                        "error": str(e)
                     })
-            except Exception as e:
-                failed_entries.append({
-                    "cif_path": meta["cif_path"],
-                    "pdb_id": meta["pdb_id"],
-                    "error": str(e)
-                })
 
     logger.info(f"  Successfully processed: {len(results)}, Failed: {len(failed_entries)}")
 
@@ -1621,6 +1711,14 @@ def main():
         "--resume", action="store_true",
         help="Resume from cached metadata (skip Step 1 if metadata_cache.pkl exists)",
     )
+    parser.add_argument(
+        "--skip_existing", action="store_true",
+        help=(
+            "Skip CIFs whose output blob "
+            "({output_dir}/{pdb_id}/{pdb_id}_assembly{N}.blob) already exists. "
+            "CSV rows for skipped entries are rebuilt from the existing blobs."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -1650,6 +1748,7 @@ def main():
             max_chains=args.max_chains,
             num_workers=args.num_workers,
             resume=args.resume,
+            skip_existing=args.skip_existing,
         )
 
         if df.empty:
