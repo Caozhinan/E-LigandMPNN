@@ -38,7 +38,7 @@ python experiment/train_ligandmpnn.py \
     data.train_name=pretrain_sequence_BN2 \
     data.sampler.max_batch_size=${BATCH_SIZE} \
     data.sampler.examples_in_cluster=5 \
-    data.sampler.examples_in_cluster_bnetv2=8 \
+    data.sampler.examples_in_cluster_bnetv2=2 \
     data.loader.num_workers=${NUM_WORKERS} \
     shared.noise=${NOISE} \
     pdb_dataset.train_csv_path=${TRAIN_CSV} \

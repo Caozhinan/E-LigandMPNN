@@ -4,8 +4,10 @@
 
 # ---- 根据你的环境修改 ----
 PROJECT_ROOT="/public/home/caozhinan/BioMPNN"
-TRAIN_CSV="/public/home/caozhinan/BioMPNN/train_set/pdb_only_train.csv"
-VALID_CSV="/public/home/caozhinan/BioMPNN/train_set/pdb_only_valid.csv"
+# TRAIN_CSV="/public/home/caozhinan/BioMPNN/train_set/pdb_only_train.csv"
+# VALID_CSV="/public/home/caozhinan/BioMPNN/train_set/pdb_only_valid.csv"
+TRAIN_CSV=/public/home/caozhinan/dataset/RCSB_PDB/blob_fixed/train_pdb_data.csv
+VALID_CSV=/public/home/caozhinan/dataset/RCSB_PDB/blob_fixed/valid_pdb_data.csv
 NUM_GPUS=8
 MAX_EPOCHS=200
 BATCH_SIZE=26
@@ -36,7 +38,7 @@ python experiment/train_ligandmpnn.py \
     experiment.checkpointer.mode=max \
     experiment.checkpointer.save_top_k=50 \
     data.dataset=pdb \
-    data.train_name=pretrain_sequence_pdb_only \
+    data.train_name=pretrain_sequence_fix_bn2+pdb \
     data.sampler.max_batch_size=${BATCH_SIZE} \
     data.sampler.examples_in_cluster=5 \
     data.sampler.examples_in_cluster_bnetv2=2 \
