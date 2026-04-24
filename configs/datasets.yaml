@@ -5,6 +5,7 @@ shared:
   num_eval_lengths : 8
   max_eval_length: 512
   noise : 0.1   #----------------------------------
+  sidechain_augmentation: false   # set to true to enable sidechain augmentation
 
   # Scaffolding parameters
   min_motif_percent: 0.05
@@ -38,6 +39,7 @@ scope_dataset:
 pdb_dataset:
   seed: ${shared.seed}
   noise: ${shared.noise}
+  sidechain_augmentation: ${shared.sidechain_augmentation}
   train_csv_path: /xcfhome/ypxia/data/LigandMPNN/new_data/train_assemble_info_with_cluster_V2.csv    #----------------------------------
   #train_pdb_BindingNet  #new_data/train_assemble_info_with_cluster
   valid_csv_path: /xcfhome/ypxia/data/LigandMPNN/new_data/valid_assemble_info_with_cluster_V2.csv #valid_assemble_info_V2_subset500.csv #/xcfhome/ypxia/data/LigandMPNN/new_data/valid_assemble_info_with_cluster_V2.csv
@@ -98,6 +100,7 @@ pdbbind_dataset:
 bindingnet_dataset:
   seed: ${shared.seed}
   noise: ${shared.noise}
+  sidechain_augmentation: ${shared.sidechain_augmentation}
   train_csv_path: /xcfhome/ypxia/data/BindingNet/binding_train_v2.csv
   valid_csv_path: /xcfhome/ypxia/data/BindingNet/binding_valid_v2.csv
   test_csv_path: /xcfhome/ypxia/data/BindingNet/binding_test_v2.csv
@@ -123,6 +126,7 @@ bindingnet_dataset:
 merge_dataset:
   seed: ${shared.seed}
   noise: ${shared.noise}
+  sidechain_augmentation: ${shared.sidechain_augmentation}
   train_csv_path: /xcfhome/ypxia/data/LigandMPNN/train_valid_merge_df.csv
   valid_csv_path: /xcfhome/ypxia/data/LigandMPNN/test_df_v2.csv
   test_csv_path: /xcfhome/ypxia/data/LigandMPNN/test_df_v2.csv

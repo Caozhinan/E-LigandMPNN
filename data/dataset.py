@@ -20,6 +20,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__f
 from structure.protein_chain_241203 import *
 from data_utils_test import parse_PDB_from_complex,featurize,bindingnet_featurize,parse_PDB_from_PDB_complex,parse_PDB_from_backbone
 import ast
+from data.sidechain_chem_lut import SIDECHAIN_CHEM_LUT
 
 
 # Element types (atomic numbers) for the last 32 atoms of the atom37 representation
@@ -77,9 +78,16 @@ def sidechain_augmentation(feature_dict, augment_prob=0.5, min_frac=0.02, max_fr
 
     side_chain_atom_types = _SIDE_CHAIN_ATOM_TYPES.to(Y.device)
 
+    # S (residue type indices) needed for LUT lookup
+    S = feature_dict.get("S", None)  # [L], int32, residue type indices 0-20
+
+    # Move LUT to correct device
+    sc_lut = SIDECHAIN_CHEM_LUT.to(Y.device)  # [21, 32, 12]
+
     new_Y_list = []
     new_Y_t_list = []
     new_Y_m_list = []
+    new_Y_chem_list = []
     for idx in selected_indices:
         sc_coords = xyz_37[idx, 5:]       # [32, 3]
         sc_mask = xyz_37_m[idx, 5:]        # [32]
@@ -89,6 +97,14 @@ def sidechain_augmentation(feature_dict, augment_prob=0.5, min_frac=0.02, max_fr
         new_Y_list.append(sc_coords[valid_sc])
         new_Y_t_list.append(side_chain_atom_types[valid_sc])
         new_Y_m_list.append(torch.ones(int(valid_sc.sum()), dtype=Y_m.dtype, device=Y.device))
+
+        # Look up chemical features from pre-computed table
+        if S is not None:
+            res_type = S[idx].long()  # residue type index
+            sc_feats = sc_lut[res_type]  # [32, 12]
+            new_Y_chem_list.append(sc_feats[valid_sc])  # [num_valid, 12]
+        else:
+            new_Y_chem_list.append(torch.zeros(int(valid_sc.sum()), 12, dtype=torch.float32, device=Y.device))
 
     if len(new_Y_list) == 0:
         return feature_dict
@@ -103,10 +119,8 @@ def sidechain_augmentation(feature_dict, augment_prob=0.5, min_frac=0.02, max_fr
 
     if "Y_chem" in feature_dict and feature_dict["Y_chem"] is not None:
         Y_chem = feature_dict["Y_chem"]
-        new_Y_chem = torch.zeros(
-            new_Y.shape[0], Y_chem.shape[-1], dtype=Y_chem.dtype, device=Y_chem.device
-        )
-        feature_dict["Y_chem"] = torch.cat([Y_chem, new_Y_chem], dim=0)
+        new_Y_chem = torch.cat(new_Y_chem_list, dim=0) if new_Y_chem_list else torch.zeros(new_Y.shape[0], 12, dtype=Y_chem.dtype, device=Y_chem.device)
+        feature_dict["Y_chem"] = torch.cat([Y_chem, new_Y_chem.to(Y_chem.dtype)], dim=0)
 
     chain_mask = chain_mask.clone()
     chain_mask[selected_indices] = 0
@@ -239,7 +253,7 @@ class BindingNetDataset(BaseDataset):
         )
         feature_dict["chain_mask"] = chain_mask
 
-        if self._is_training:
+        if self._is_training and getattr(self._dataset_cfg, 'sidechain_augmentation', True):
             feature_dict = sidechain_augmentation(feature_dict)
 
         feature_dict = bindingnet_featurize(
@@ -337,7 +351,7 @@ class MergeDataset(BaseDataset):
         )
         feature_dict["chain_mask"] = chain_mask
 
-        if self._is_training:
+        if self._is_training and getattr(self._dataset_cfg, 'sidechain_augmentation', True):
             feature_dict = sidechain_augmentation(feature_dict)
 
         feature_dict = bindingnet_featurize(
@@ -441,7 +455,7 @@ class PDBDataset(BaseDataset):
             )
             feature_dict["chain_mask"] = chain_mask
 
-            if self._is_training:
+            if self._is_training and getattr(self._dataset_cfg, 'sidechain_augmentation', True):
                 feature_dict = sidechain_augmentation(feature_dict)
 
             feature_dict = bindingnet_featurize(
@@ -471,7 +485,7 @@ class PDBDataset(BaseDataset):
             # )
             # feature_dict["chain_mask"] = chain_mask
 
-        if self._is_training:
+        if self._is_training and getattr(self._dataset_cfg, 'sidechain_augmentation', True):
             feature_dict = sidechain_augmentation(feature_dict)
 
         feature_dict = bindingnet_featurize(

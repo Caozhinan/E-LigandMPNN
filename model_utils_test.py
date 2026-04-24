@@ -22,6 +22,7 @@ from Diffusion.generator import (
 )
 from Diffusion.diffusion import DiffusionModule
 from protenix.utils.torch_utils import autocasting_disable_decorator
+from data.sidechain_chem_lut import SIDECHAIN_CHEM_LUT
 import pdb
 
 class ProteinMPNN(torch.nn.Module):
@@ -1630,9 +1631,18 @@ class ProteinFeaturesLigand(torch.nn.Module):
             R_m = R_m.view(B, L, -1)  # mask
             R_t = R_t.view(B, L, -1)  # atom types
 
-            # 为侧链原子创建零化学特征
             if Y_chem is not None:
-                R_chem = torch.zeros(B, L, R.shape[2], 12, device=Y_chem.device, dtype=Y_chem.dtype)
+                S = input_features["S"]  # [B, L]
+                sc_lut = SIDECHAIN_CHEM_LUT.to(Y_chem.device)  # [21, 32, 12]
+
+                # Look up each neighbour residue's 32 side-chain atom features
+                S_neighbors = torch.gather(S, 1, E_idx_sub)  # [B, L, 16]
+                R_chem = sc_lut[S_neighbors.long()]  # [B, L, 16, 32, 12]
+                R_chem = R_chem.view(B, L, -1, 12)  # [B, L, 512, 12]
+
+                # Zero out features for non-existent atoms
+                R_chem = R_chem * R_m[:, :, :, None]  # R_m: [B, L, 512]
+
                 Y_chem = torch.cat((R_chem, Y_chem), 2)  # [B, L, R_atoms+Y_atoms, 12]
 
             # Ligand atom context
