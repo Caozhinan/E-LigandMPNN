@@ -100,6 +100,8 @@ class pretrain_sequence_module:
             on_epoch=True,
             prog_bar=True
         )
+        print(f"\n[Train] epoch_perplexity={train_perplexity_}, "
+              f"epoch_accuracy={train_accuracy_}")
 
         epoch_time = (time.time() - self._epoch_start_time) / 60.0
         self.log(
